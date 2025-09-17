@@ -1,5 +1,5 @@
 ---
-title: "Research Code"
+title: "Code"
 author: "Xiaowen Yue"
 date: "2025-02-21"
 output:
@@ -408,7 +408,7 @@ library(stringr)
 library(tidyr)
 library(synthdid)
 
-# ✅ Step 1: 提取 treatment 药物（THEOPHYLLINE ANHYDROUS）
+# Step 1: 提取 treatment 药物（THEOPHYLLINE ANHYDROUS）
 treatment_data <- merged_data %>%
   filter(MARKETINGCATEGORYNAME == "ANDA", SUBSTANCENAME == "BUDESONIDE") %>%
   group_by(Year, Quarter) %>%
@@ -422,7 +422,7 @@ treatment_data <- merged_data %>%
   ) %>%
   ungroup()
 
-# ✅ Step 2: 构建 control group（同类 non-cartel drugs）
+# Step 2: 构建 control group（同类 non-cartel drugs）
 control_data <- merged_data %>%
   filter(
     MARKETINGCATEGORYNAME == "ANDA",
@@ -485,7 +485,7 @@ overall_stats <- control_data_filtered %>%
 # 查看结果
 print(overall_stats)
 
-# ✅ Step 3: wide format（药品 × 时间）
+#  Step 3: wide format（药品 × 时间）
 control_matrix <- control_data_filtered %>%
   select(SUBSTANCENAME, Year_Quarter, Price) %>%
   pivot_wider(names_from = Year_Quarter, values_from = Price)
@@ -493,7 +493,7 @@ control_matrix <- control_data_filtered %>%
 rownames(control_matrix) <- control_matrix$SUBSTANCENAME
 control_matrix <- as.matrix(control_matrix[,-1])
 
-# ✅ Step 4: 处理 treatment 药物格式
+#  Step 4: 处理 treatment 药物格式
 treatment_wide <- treatment_data %>%
   select(Year_Quarter, Price) %>%
   pivot_wider(names_from = Year_Quarter, values_from = Price)
@@ -654,7 +654,7 @@ library(stringr)
 library(tidyr)
 library(synthdid)
 
-# ✅ Step 1: 提取 treatment 药物（THEOPHYLLINE ANHYDROUS）
+#  Step 1: 提取 treatment 药物（THEOPHYLLINE ANHYDROUS）
 treatment_data <- merged_data %>%
   filter(MARKETINGCATEGORYNAME == "ANDA", SUBSTANCENAME == "FLUCONAZOLE") %>%
   group_by(Year, Quarter) %>%
@@ -668,7 +668,7 @@ treatment_data <- merged_data %>%
   ) %>%
   ungroup()
 
-# ✅ Step 2: 构建 control group（同类 non-cartel drugs，只基于药理分类筛选）
+#  Step 2: 构建 control group（同类 non-cartel drugs，只基于药理分类筛选）
 control_data <- merged_data %>%
   filter(
     MARKETINGCATEGORYNAME == "ANDA",
@@ -743,7 +743,7 @@ control_matrix <- control_data_filtered %>%
 rownames(control_matrix) <- control_matrix$SUBSTANCENAME
 control_matrix <- as.matrix(control_matrix[,-1])
 
-# ✅ Step 4: 处理 treatment 药物格式
+#  Step 4: 处理 treatment 药物格式
 treatment_wide <- treatment_data %>%
   select(Year_Quarter, Price) %>%
   pivot_wider(names_from = Year_Quarter, values_from = Price)
@@ -754,7 +754,7 @@ control_matrix <- control_matrix[, common_quarters]
 treatment_vector <- as.matrix(treatment_wide[, common_quarters])
 rownames(treatment_vector) <- "FLUCONAZOLE"
 
-# ✅ Step 5: 合并 matrix
+#  Step 5: 合并 matrix
 
 price_matrix_full <- rbind(control_matrix, treatment_vector)
 # 方法 1：按名字删除（推荐）
@@ -770,7 +770,7 @@ price_matrix_filtered <- price_matrix_full[complete.cases(price_matrix_full), ]
 
 
 
-# ✅ Step 6: synthdid 估计
+#  Step 6: synthdid 估计
 library(synthdid)
 N0 <- nrow(price_matrix_filtered) - 1
 T0 <- 7  
@@ -918,7 +918,7 @@ treatment_data <- merged_data %>%
   ) %>%
   ungroup()
 
-# ✅ Step 2: 构建 control group（同类 non-cartel drugs）
+#  Step 2: 构建 control group（同类 non-cartel drugs）
 control_data <- merged_data %>%
   filter(
     MARKETINGCATEGORYNAME == "ANDA",
@@ -957,7 +957,7 @@ overall_stats <- control_data %>%
 # 查看结果
 print(overall_stats)
 
-# ✅ Step 3: wide format（药品 × 时间）
+#  Step 3: wide format（药品 × 时间）
 control_matrix <- control_data %>%
   select(SUBSTANCENAME, Year_Quarter, Price) %>%
   pivot_wider(names_from = Year_Quarter, values_from = Price)
@@ -965,7 +965,7 @@ control_matrix <- control_data %>%
 rownames(control_matrix) <- control_matrix$SUBSTANCENAME
 control_matrix <- as.matrix(control_matrix[,-1])
 
-# ✅ Step 4: 处理 treatment 药物格式
+#  Step 4: 处理 treatment 药物格式
 treatment_wide <- treatment_data %>%
   select(Year_Quarter, Price) %>%
   pivot_wider(names_from = Year_Quarter, values_from = Price)
@@ -976,7 +976,7 @@ control_matrix <- control_matrix[, common_quarters]
 treatment_vector <- as.matrix(treatment_wide[, common_quarters])
 rownames(treatment_vector) <- "THEOPHYLLINE ANHYDROUS"
 
-# ✅ Step 5: 合并 matrix
+#  Step 5: 合并 matrix
 
 price_matrix_full <- rbind(control_matrix, treatment_vector)
 # 方法 1：按名字删除（推荐）
@@ -992,7 +992,7 @@ price_matrix_filtered <- price_matrix_full[complete.cases(price_matrix_full), ]
 
 
 
-# ✅ Step 6: synthdid 估计
+#  Step 6: synthdid 估计
 library(synthdid)
 N0 <- nrow(price_matrix_filtered) - 1
 T0 <- 13  
@@ -1124,7 +1124,7 @@ library(stringr)
 library(tidyr)
 library(synthdid)
 
-# ✅ Step 1: 提取 treatment 药物（THEOPHYLLINE ANHYDROUS）
+#  Step 1: 提取 treatment 药物（THEOPHYLLINE ANHYDROUS）
 treatment_data <- merged_data %>%
   filter(MARKETINGCATEGORYNAME == "ANDA", SUBSTANCENAME == "FLUOCINONIDE") %>%
   group_by(Year, Quarter) %>%
@@ -1138,7 +1138,7 @@ treatment_data <- merged_data %>%
   ) %>%
   ungroup()
 
-# ✅ Step 2: 构建 control group（同类 non-cartel drugs）
+#  Step 2: 构建 control group（同类 non-cartel drugs）
 control_data <- merged_data %>%
   filter(
     MARKETINGCATEGORYNAME == "ANDA",
@@ -1176,7 +1176,7 @@ overall_stats <- control_data %>%
 # 查看结果
 print(overall_stats)
 
-# ✅ Step 3: wide format（药品 × 时间）
+# Step 3: wide format（药品 × 时间）
 control_matrix <- control_data %>%
   select(SUBSTANCENAME, Year_Quarter, Price) %>%
   pivot_wider(names_from = Year_Quarter, values_from = Price)
@@ -1184,7 +1184,7 @@ control_matrix <- control_data %>%
 rownames(control_matrix) <- control_matrix$SUBSTANCENAME
 control_matrix <- as.matrix(control_matrix[,-1])
 
-# ✅ Step 4: 处理 treatment 药物格式
+# Step 4: 处理 treatment 药物格式
 treatment_wide <- treatment_data %>%
   select(Year_Quarter, Price) %>%
   pivot_wider(names_from = Year_Quarter, values_from = Price)
@@ -1195,7 +1195,7 @@ control_matrix <- control_matrix[, common_quarters]
 treatment_vector <- as.matrix(treatment_wide[, common_quarters])
 rownames(treatment_vector) <- "FLUOCINONIDE"
 
-# ✅ Step 5: 合并 matrix
+# Step 5: 合并 matrix
 
 price_matrix_full <- rbind(control_matrix, treatment_vector)
 # 方法 1：按名字删除（推荐）
@@ -1211,7 +1211,7 @@ price_matrix_filtered <- price_matrix_full[complete.cases(price_matrix_full), ]
 
 
 
-# ✅ Step 6: synthdid 估计
+#  Step 6: synthdid 估计
 library(synthdid)
 N0 <- nrow(price_matrix_filtered) - 1
 T0 <- 10  
@@ -2588,7 +2588,7 @@ filtered_data <- merged_data %>%
     event_time = round((quarter_numeric - event_quarter) * 4)
   )
 
-# ✅ 计算 baseline price：事件前 >10 个季度的平均价格
+#  计算 baseline price：事件前 >10 个季度的平均价格
 baseline_data <- filtered_data %>% filter(event_time < -14)
 baseline_price <- mean(baseline_data$price_per_unit, na.rm = TRUE)
 
@@ -2610,7 +2610,7 @@ if (is.na(baseline_price)) {
 # 设置价格弹性
 price_elasticity <- 0.4
 
-# ✅ 计算 welfare loss
+#  计算 welfare loss
 filtered_data <- filtered_data %>%
   mutate(
     overcharge = ifelse(event_time >= -10 & event_time < 0,
@@ -2622,7 +2622,7 @@ filtered_data <- filtered_data %>%
                      0.5 * (`Units Reimbursed` - Q_hat) * (price_per_unit - baseline_price), 0)
   )
 
-# ✅ 汇总
+#  汇总
 total_overcharge <- sum(filtered_data$overcharge, na.rm = TRUE)
 total_cs_loss <- sum(filtered_data$cs_loss, na.rm = TRUE)
 
@@ -2631,7 +2631,7 @@ if (is.na(total_overcharge) | is.na(total_cs_loss)) {
   warning("❗️ Some loss values are NA. Please double check your filtered data.")
 }
 
-# ✅ 输出结果
+#  输出结果
 cat("📌 Total Overcharge (USD):", round(total_overcharge, 2), "\n")
 cat("📌 Total Consumer Surplus Loss (USD):", round(total_cs_loss, 2), "\n")
 
