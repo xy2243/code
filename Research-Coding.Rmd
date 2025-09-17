@@ -1,0 +1,2863 @@
+---
+title: "Research Code"
+author: "Xiaowen Yue"
+date: "2025-02-21"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+
+
+
+
+
+
+
+
+
+
+1. I used DID method. The treatment group is BUDESONIDE. This is a drug inside the Cartel. The Control group is Fluticasone Propionate. This is a drug outside the cartel. BUDESONIDE and Fluticasone Propionate are similar and have same function.
+
+```{r}
+#combine所有的dataset
+options(repos = c(CRAN = "https://cloud.r-project.org/"))  # Set CRAN mirror
+
+install.packages("ggplot2")  # Install ggplot2
+install.packages("fixest")   # Install fixest
+
+library(ggplot2)
+library(fixest)
+
+library(dplyr)
+library(readxl)
+
+data1 <- read_excel("~/Desktop/Research Data/2012.xlsx")
+data2 <- read_excel("~/Desktop/Research Data/2013.xlsx")
+data3 <- read_excel("~/Desktop/Research Data/2014.xlsx")
+data4 <- read_excel("~/Desktop/Research Data/2015.xlsx")
+data5 <- read_excel("~/Desktop/Research Data/2016.xlsx")
+data6 <- read_excel("~/Desktop/Research Data/2017.xlsx")
+data7 <- read_excel("~/Desktop/Research Data/2018.xlsx")
+data8 <- read_excel("~/Desktop/Research Data/2019.xlsx")
+data9 <- read_excel("~/Desktop/Research Data/2020.xlsx")
+combine_data <- bind_rows(data1, data2, data3, data4, data5, data6, data7, data8, data9)
+write.csv(combine_data, "combined_data.csv", row.names = FALSE)
+
+#Medicaid 和 NDC的数据清洗
+combine_data_cleaned <- combine_data %>%
+  select(-`State Code`, -`Suppression Used`, -`Record ID`, -`Package Size`)
+write.csv(combine_data_cleaned, "combined_data_cleaned.csv", row.names = FALSE)
+NDCdirectory <- read_excel("~/Desktop/Research Data/product.xlsx")
+NDCdirectory_cleaned <- NDCdirectory %>%
+  select(-`PRODUCTID`, -`PRODUCTTYPENAME`, -`PROPRIETARYNAMESUFFIX`, -`APPLICATIONNUMBER`, -`DEASCHEDULE`, -`NDC_EXCLUDE_FLAG`, -`LISTING_RECORD_CERTIFIED_THROUGH`)
+write.csv(NDCdirectory_cleaned, "NDCdirectory_cleaned.csv", row.names = FALSE)
+
+
+#首先要把NDC和medicaid这两个dataset merge到一起
+combine_data_cleaned$Combined_Code <- paste(combine_data_cleaned$`Labeler Code`, combine_data_cleaned$`Product Code`, sep = "-")
+
+NDCdirectory_cleaned$PRODUCTNDC <- sub("^0+", "", NDCdirectory_cleaned$PRODUCTNDC)
+
+merged_data <- merge(NDCdirectory_cleaned, combine_data_cleaned, by.x = "PRODUCTNDC", by.y = "Combined_Code", all = TRUE)
+
+merged_data <- merged_data[!is.na(merged_data$PROPRIETARYNAME), ]
+
+
+```
+
+```{R}
+library(ggplot2)
+
+library(ggplot2)
+
+#先挑选出stanbstance name，因为这些药中都有Budesonide成分。在分开ANDA和NDC去研究不同的价格变化
+
+filtered_merged_data <- merged_data %>%
+  filter(SUBSTANCENAME == "BUDESONIDE")
+
+
+#计算price
+aggregated_data <- filtered_merged_data %>%
+  group_by(Year, Quarter, MARKETINGCATEGORYNAME) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  )
+
+aggregated_data <- aggregated_data %>%
+  mutate(Price = TotalAmountReimbursed / QuantityReimbursed)
+
+aggregated_data <- aggregated_data %>%
+  mutate(Year_Quarter = paste(Year, Quarter, sep = "-"))
+
+
+#summaeizeBudesonide的statistics
+
+
+
+
+
+
+
+aggregated_data <- aggregated_data %>% ungroup()
+
+# 针对整个数据集计算统计值
+overall_stats <- aggregated_data %>%
+  summarise(
+    Price_mean = mean(Price, na.rm = TRUE),
+    Price_sd = sd(Price, na.rm = TRUE),
+    Price_count = n(),
+    
+    QuantityReimbursed_mean = mean(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_sd = sd(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_count = n(),
+    
+    TotalAmountReimbursed_mean = mean(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_sd = sd(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_count = n()
+  )
+
+# 查看结果
+print(overall_stats)
+
+
+
+#filter出来ANDA
+
+aggregated_data_ANDA <- aggregated_data %>% filter(MARKETINGCATEGORYNAME == "ANDA")
+
+model <- lm(Price ~ Year_Quarter, data = aggregated_data_ANDA)
+
+ggplot(aggregated_data_ANDA, aes(x = Year_Quarter, y = Price)) +
+  geom_point() +
+  geom_smooth(method = "lm", col = "blue") +
+  labs(title = "Regression of Price on Year_Quarter",
+       x = "Year_Quarter",
+       y = "Price")
+
+#filter出来NDA
+aggregated_data_NDA <- aggregated_data %>% filter(MARKETINGCATEGORYNAME == "NDA")
+
+model <- lm(Price ~ Year_Quarter, data = aggregated_data_NDA)
+
+ggplot(aggregated_data_NDA, aes(x = Year_Quarter, y = Price)) +
+  geom_point() +
+  geom_smooth(method = "lm", col = "red") +
+  labs(title = "Regression of Price on Year_Quarter",
+       x = "Year_Quarter",
+       y = "Price")
+
+
+
+
+
+
+
+
+#简单的数据清理结束，接下来我们要寻找一个可以和Budesonide匹配但是没有在cartel里面的药:Fluticasone Propionate
+#先挑选出stanbstance name，因为这些药中都有Budesonide成分。在分开ANDA和NDC去研究不同的价格变化
+
+filtered_merged_data_1 <- merged_data %>%
+  filter(SUBSTANCENAME == "FLUTICASONE PROPIONATE")
+
+
+#计算price
+aggregated_data_1 <- filtered_merged_data_1 %>%
+  group_by(Year, Quarter, MARKETINGCATEGORYNAME) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  )
+
+aggregated_data_1 <- aggregated_data_1 %>%
+  mutate(Price = TotalAmountReimbursed / QuantityReimbursed)
+
+aggregated_data_1 <- aggregated_data_1 %>%
+  mutate(Year_Quarter = paste(Year, Quarter, sep = "-"))
+
+
+#summaeizeBudesonide的statistics
+
+
+
+
+
+
+
+aggregated_data_1 <- aggregated_data_1 %>% ungroup()
+
+# 针对整个数据集计算统计值
+overall_stats <- aggregated_data_1 %>%
+  summarise(
+    Price_mean = mean(Price, na.rm = TRUE),
+    Price_sd = sd(Price, na.rm = TRUE),
+    Price_count = n(),
+    
+    QuantityReimbursed_mean = mean(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_sd = sd(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_count = n(),
+    
+    TotalAmountReimbursed_mean = mean(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_sd = sd(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_count = n()
+  )
+
+# 查看结果
+print(overall_stats)
+
+#filter出来ANDA
+
+aggregated_data_ANDA_1 <- aggregated_data_1 %>% filter(MARKETINGCATEGORYNAME == "ANDA")
+
+model <- lm(Price ~ Year_Quarter, data = aggregated_data_ANDA_1)
+
+ggplot(aggregated_data_ANDA_1, aes(x = Year_Quarter, y = Price)) +
+  geom_point() +
+  geom_smooth(method = "lm", col = "blue") +
+  labs(title = "Regression of Price on Year_Quarter",
+       x = "Year_Quarter",
+       y = "Price")
+
+
+#用DID的方法run regression
+aggregated_data_ANDA_1 <- aggregated_data_ANDA_1 %>%
+  mutate(drugname = "FLUTICASONE PROPIONATE")
+aggregated_data_ANDA_1 <- aggregated_data_ANDA_1 %>% slice(-n())
+
+aggregated_data_ANDA <- aggregated_data_ANDA %>%
+  mutate(drugname = "Budesonide")
+DID_dataset <- rbind(aggregated_data_ANDA_1, aggregated_data_ANDA)
+aggregated_data_ANDA <- aggregated_data_ANDA_1 %>% slice(-n())
+
+
+
+install.packages("fixest")
+library(fixest)
+DID_dataset <- DID_dataset %>%
+  mutate(
+    PostCartel = ifelse(Year_Quarter > "2013-2", 1, 0),
+    Treatment = ifelse(drugname == "Budesonide", 1, 0),
+    PostCartel_Treatment = PostCartel * Treatment
+  )
+
+
+did_model <- feols(Price ~ PostCartel + Treatment + PostCartel_Treatment | Year_Quarter, data = DID_dataset)
+
+summary(did_model)
+
+coefplot(did_model)
+
+
+
+ggplot(DID_dataset, aes(x = Year_Quarter, y = Price, color = as.factor(Treatment), group = as.factor(Treatment))) +
+  geom_line(size = 1) +  
+  geom_point(size = 2) + 
+  labs(title = "Price Trend Before and After Cartel",
+       x = "Year-Quarter",
+       y = "Price",
+       color = "Treatment Group") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+# 将 Year_Quarter 转换为因子，确保顺序一致
+DID_dataset$Year_Quarter <- factor(DID_dataset$Year_Quarter, levels = unique(DID_dataset$Year_Quarter))
+
+ggplot(DID_dataset, aes(x = Year_Quarter, y = Price, color = as.factor(Treatment), group = as.factor(Treatment))) +
+  geom_line(size = 1) +  
+  geom_point(size = 2) + 
+  # 加入两条垂直线，标注 cartel 开始和结束
+  geom_vline(xintercept = which(levels(DID_dataset$Year_Quarter) == "2013-2"), 
+             linetype = "dashed", color = "black") +
+  geom_vline(xintercept = which(levels(DID_dataset$Year_Quarter) == "2016-3"), 
+             linetype = "dashed", color = "black") +
+  labs(title = "Price Trend Before and After Cartel",
+       x = "Year-Quarter",
+       y = "Price",
+       color = "Treatment Group") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+```
+
+
+
+
+```{R}
+# 筛选出符合条件的记录
+filtered_combo_data <- merged_data %>%
+  filter(SUBSTANCENAME == "BUDESONIDE",
+         PROPRIETARYNAME %in% c("Budesonide Inhalation", "PULMICORT RESPULES"),
+         MARKETINGCATEGORYNAME == "ANDA")
+
+# 聚合数据并计算价格
+aggregated_combo_data <- filtered_combo_data %>%
+  group_by(Year, Quarter) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  ) %>%
+  mutate(
+    Price = TotalAmountReimbursed / QuantityReimbursed,
+    Year_Quarter = paste(Year, Quarter, sep = "-")
+  ) %>%
+  ungroup()
+
+
+ggplot(aggregated_combo_data, aes(x = Year_Quarter, y = Price, group = 1)) +
+  geom_line(color = "steelblue", size = 1) +
+  geom_point(color = "steelblue", size = 2) +
+  geom_vline(xintercept = which(unique(aggregated_combo_data$Year_Quarter) == "2015-2"),
+             linetype = "dashed", color = "black") +
+  geom_vline(xintercept = which(unique(aggregated_combo_data$Year_Quarter) == "2016-3"),
+             linetype = "dashed", color = "black") +
+  labs(title = "Price Trend of Budesonide Inhalation + PULMICORT RESPULES (ANDA)",
+       x = "Year-Quarter", y = "Price") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+
+```
+
+
+
+
+
+
+
+
+1. （generalized DID + Synthesized control)
+2. I used DID method. The treatment group is THEOPHYLLINE ANHYDROUS. This is a drug inside the Cartel. I used synthesize control for drug outside the cartel.
+```{r}
+filtered_merged_data <- merged_data %>%
+  filter(SUBSTANCENAME == "BUDESONIDE")
+
+
+#计算price
+aggregated_data <- filtered_merged_data %>%
+  group_by(Year, Quarter, MARKETINGCATEGORYNAME) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  )
+
+aggregated_data <- aggregated_data %>%
+  mutate(Price = TotalAmountReimbursed / QuantityReimbursed)
+
+aggregated_data <- aggregated_data %>%
+  mutate(Year_Quarter = paste(Year, Quarter, sep = "-"))
+
+
+#summaeizeBudesonide的statistics
+
+
+
+
+
+
+
+aggregated_data <- aggregated_data %>% ungroup()
+
+# 针对整个数据集计算统计值
+overall_stats <- aggregated_data %>%
+  summarise(
+    Price_mean = mean(Price, na.rm = TRUE),
+    Price_sd = sd(Price, na.rm = TRUE),
+    Price_count = n(),
+    
+    QuantityReimbursed_mean = mean(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_sd = sd(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_count = n(),
+    
+    TotalAmountReimbursed_mean = mean(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_sd = sd(TotalAmountReimbursed, na.rm = TRUE), 
+    TotalAmountReimbursed_count = n()
+  )
+
+# 查看结果
+print(overall_stats)
+
+
+
+#filter出来ANDA
+
+aggregated_data_ANDA <- aggregated_data %>% filter(MARKETINGCATEGORYNAME == "ANDA")
+
+model <- lm(Price ~ Year_Quarter, data = aggregated_data_ANDA)
+
+ggplot(aggregated_data_ANDA, aes(x = Year_Quarter, y = Price)) +
+  geom_point() +
+  geom_smooth(method = "lm", col = "blue") +
+  labs(title = "Regression of Price on Year_Quarter",
+       x = "Year_Quarter",
+       y = "Price")
+
+
+
+# 安装并加载必要包（只需第一次安装）
+if (!require(devtools)) install.packages("devtools")
+if (!require(synthdid)) devtools::install_github("synth-inference/synthdid")
+
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(synthdid)
+
+# ✅ Step 1: 提取 treatment 药物（THEOPHYLLINE ANHYDROUS）
+treatment_data <- merged_data %>%
+  filter(MARKETINGCATEGORYNAME == "ANDA", SUBSTANCENAME == "BUDESONIDE") %>%
+  group_by(Year, Quarter) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  ) %>%
+  mutate(
+    Price = TotalAmountReimbursed / QuantityReimbursed,
+    Year_Quarter = paste(Year, Quarter, sep = "-")
+  ) %>%
+  ungroup()
+
+# ✅ Step 2: 构建 control group（同类 non-cartel drugs）
+control_data <- merged_data %>%
+  filter(
+    MARKETINGCATEGORYNAME == "ANDA",
+    (
+     str_detect(PHARM_CLASSES, regex("steroid|glucocorticoid|corticosteroid|anti-inflammatory", ignore_case = TRUE)) |
+     str_detect(SUBSTANCENAME, regex("sone|olone", ignore_case = TRUE))
+
+    ),
+    SUBSTANCENAME != "BUDESONIDE"
+  ) %>%
+  group_by(SUBSTANCENAME, Year, Quarter) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  ) %>%
+  mutate(Price = TotalAmountReimbursed / QuantityReimbursed) %>%
+  ungroup() %>%
+  mutate(Year_Quarter = paste(Year, Quarter, sep = "-"))
+
+library(readxl)
+library(dplyr)
+library(stringr)
+
+# 读入你的 drug list
+drug_list_data <- read_excel("~/Desktop/Research Data/Drug info dataset(已自动还原).xlsx")
+
+# 提取药品名字，假设列名叫 "Drug_Cartel"，如果不是的话告诉我改
+drug_list <- toupper(drug_list_data$Drug_Cartel)
+
+# 把control_data的药名也转成大写（避免大小写不同匹配不到）
+control_data <- control_data %>%
+  mutate(SUBSTANCENAME = toupper(SUBSTANCENAME))
+
+# 用模糊匹配，找出哪些行要删除
+rows_to_remove <- sapply(control_data$SUBSTANCENAME, function(name) {
+  any(str_detect(name, str_c(drug_list, collapse = "|")))
+})
+
+# 保留没被匹配到的药品
+control_data_filtered <- control_data[!rows_to_remove, ]
+
+
+
+# 针对整个数据集计算统计值
+overall_stats <- control_data_filtered %>%
+  summarise(
+    Price_mean = mean(Price, na.rm = TRUE),
+    Price_sd = sd(Price, na.rm = TRUE),
+    Price_count = n(),
+    
+    QuantityReimbursed_mean = mean(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_sd = sd(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_count = n(),
+    
+    TotalAmountReimbursed_mean = mean(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_sd = sd(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_count = n()
+  )
+
+# 查看结果
+print(overall_stats)
+
+# ✅ Step 3: wide format（药品 × 时间）
+control_matrix <- control_data_filtered %>%
+  select(SUBSTANCENAME, Year_Quarter, Price) %>%
+  pivot_wider(names_from = Year_Quarter, values_from = Price)
+
+rownames(control_matrix) <- control_matrix$SUBSTANCENAME
+control_matrix <- as.matrix(control_matrix[,-1])
+
+# ✅ Step 4: 处理 treatment 药物格式
+treatment_wide <- treatment_data %>%
+  select(Year_Quarter, Price) %>%
+  pivot_wider(names_from = Year_Quarter, values_from = Price)
+
+# 匹配时间点
+common_quarters <- intersect(colnames(control_matrix), colnames(treatment_wide))
+control_matrix <- control_matrix[, common_quarters]
+treatment_vector <- as.matrix(treatment_wide[, common_quarters])
+rownames(treatment_vector) <- "BUDESONIDE"
+
+# ✅ Step 5: 合并 matrix
+
+price_matrix_full <- rbind(control_matrix, treatment_vector)
+# 方法 1：按名字删除（推荐）
+price_matrix_full <- price_matrix_full[, colnames(price_matrix_full) != "NA-NA"]
+# 自动设置行名（用行号或药品名都行，如果你之前没有赋名）
+rownames(price_matrix_full) <- make.names(rownames(price_matrix_full), unique = TRUE)
+
+# 保留所有“没有 NA 值”的行
+price_matrix_filtered <- price_matrix_full[complete.cases(price_matrix_full), ]
+
+
+
+
+
+
+# ✅ Step 6: synthdid 估计
+library(synthdid)
+N0 <- nrow(price_matrix_filtered) - 1
+T0 <- 7  
+
+result <- synthdid_estimate(price_matrix_filtered, N0 = N0, T0 = T0)
+synthdid_plot(result)
+summary(result)
+synthdid_se(result)
+plot(result, overlay = 1)  # 更直观地看到 synthetic vs treated
+
+synthdid_se(result, method = "placebo")   # or try method = "bootstrap"
+
+# 查看你设置的 T0 是否超过列数
+cat("T0:", T0, "   ncol:", ncol(price_matrix_filtered), "\n")
+
+# 查看矩阵维度
+dim(price_matrix_filtered)
+
+
+
+
+summary(result)
+synthdid_se(result)
+att <- as.numeric(result)
+se <- synthdid_se(result)
+cat("ATT estimate:", round(att, 4), "\n")
+cat("Standard error:", round(se, 4), "\n")
+
+
+
+
+library(tibble)
+
+summary_table <- tibble(
+  ATT = round(att, 4),
+  Std_Error = round(se, 4)
+)
+print(summary_table)
+
+
+# 计算标准误（推荐使用placebo方法更稳健）
+se <- synthdid_se(result, method = "placebo")
+
+# 计算95%置信区间
+estimate <- as.numeric(result)
+lower_bound <- estimate - 1.96 * se
+upper_bound <- estimate + 1.96 * se
+
+# 输出结果
+cat("Estimate:", round(estimate, 4), "\n")
+cat("Standard Error:", round(se, 4), "\n")
+cat("95% CI: [", round(lower_bound, 4), ",", round(upper_bound, 4), "]\n")
+
+
+```
+
+1. （generalized DID + Synthesized control)
+2. I used DID method. The treatment group is THEOPHYLLINE ANHYDROUS. This is a drug inside the Cartel. I used synthesize control for drug outside the cartel.
+```{r}
+filtered_merged_data <- merged_data %>%
+  filter(SUBSTANCENAME == "FLUCONAZOLE")
+
+
+#计算price
+aggregated_data <- filtered_merged_data %>%
+  group_by(Year, Quarter, MARKETINGCATEGORYNAME) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  )
+
+aggregated_data <- aggregated_data %>%
+  mutate(Price = TotalAmountReimbursed / QuantityReimbursed)
+
+aggregated_data <- aggregated_data %>%
+  mutate(Year_Quarter = paste(Year, Quarter, sep = "-"))
+
+
+#summaeizeBudesonide的statistics
+
+
+
+
+
+
+
+aggregated_data <- aggregated_data %>% ungroup()
+
+# 针对整个数据集计算统计值
+overall_stats <- aggregated_data %>%
+  summarise(
+    Price_mean = mean(Price, na.rm = TRUE),
+    Price_sd = sd(Price, na.rm = TRUE),
+    Price_count = n(),
+    
+    QuantityReimbursed_mean = mean(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_sd = sd(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_count = n(),
+    
+    TotalAmountReimbursed_mean = mean(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_sd = sd(TotalAmountReimbursed, na.rm = TRUE), 
+    TotalAmountReimbursed_count = n()
+  )
+
+# 查看结果
+print(overall_stats)
+
+
+
+#filter出来ANDA
+
+aggregated_data_ANDA <- aggregated_data %>% filter(MARKETINGCATEGORYNAME == "ANDA")
+
+model <- lm(Price ~ Year_Quarter, data = aggregated_data_ANDA)
+
+ggplot(aggregated_data_ANDA, aes(x = Year_Quarter, y = Price)) +
+  geom_point() +
+  geom_smooth(method = "lm", col = "blue") +
+  labs(title = "Regression of Price on Year_Quarter",
+       x = "Year_Quarter",
+       y = "Price")
+
+
+
+# 安装并加载必要包（只需第一次安装）
+if (!require(devtools)) install.packages("devtools")
+if (!require(synthdid)) devtools::install_github("synth-inference/synthdid")
+
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(synthdid)
+
+# ✅ Step 1: 提取 treatment 药物（THEOPHYLLINE ANHYDROUS）
+treatment_data <- merged_data %>%
+  filter(MARKETINGCATEGORYNAME == "ANDA", SUBSTANCENAME == "FLUCONAZOLE") %>%
+  group_by(Year, Quarter) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  ) %>%
+  mutate(
+    Price = TotalAmountReimbursed / QuantityReimbursed,
+    Year_Quarter = paste(Year, Quarter, sep = "-")
+  ) %>%
+  ungroup()
+
+# ✅ Step 2: 构建 control group（同类 non-cartel drugs，只基于药理分类筛选）
+control_data <- merged_data %>%
+  filter(
+    MARKETINGCATEGORYNAME == "ANDA",
+    str_detect(PHARM_CLASSES, regex(str_c(
+      "antifungal",
+      "Azoles",
+      "Cytochrome P450 3A4 Inhibitors",
+      "Cytochrome P450 2C9 Inhibitors",
+      "Cytochrome P450 2C19 Inhibitors"
+    ), ignore_case = TRUE)),
+    SUBSTANCENAME != "FLUCONAZOLE"  # 注意：这里是和前面平行的
+  ) %>%
+  group_by(SUBSTANCENAME, Year, Quarter) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  ) %>%
+  mutate(Price = TotalAmountReimbursed / QuantityReimbursed) %>%
+  ungroup() %>%
+  mutate(Year_Quarter = paste(Year, Quarter, sep = "-"))
+
+
+
+library(readxl)
+library(dplyr)
+library(stringr)
+
+# 读入你的 drug list
+drug_list_data <- read_excel("~/Desktop/Research Data/Drug info dataset(已自动还原).xlsx")
+
+# 提取药品名字，假设列名叫 "Drug_Cartel"，如果不是的话告诉我改
+drug_list <- toupper(drug_list_data$Drug_Cartel)
+
+# 把control_data的药名也转成大写（避免大小写不同匹配不到）
+control_data <- control_data %>%
+  mutate(SUBSTANCENAME = toupper(SUBSTANCENAME))
+
+# 用模糊匹配，找出哪些行要删除
+rows_to_remove <- sapply(control_data$SUBSTANCENAME, function(name) {
+  any(str_detect(name, str_c(drug_list, collapse = "|")))
+})
+
+# 保留没被匹配到的药品
+control_data_filtered <- control_data[!rows_to_remove, ]
+
+
+
+# 针对整个数据集计算统计值
+overall_stats <- control_data_filtered %>%
+  summarise(
+    Price_mean = mean(Price, na.rm = TRUE),
+    Price_sd = sd(Price, na.rm = TRUE),
+    Price_count = n(),
+    
+    QuantityReimbursed_mean = mean(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_sd = sd(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_count = n(),
+    
+    TotalAmountReimbursed_mean = mean(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_sd = sd(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_count = n()
+  )
+
+# 查看结果
+print(overall_stats)
+
+# ✅ Step 3: wide format（药品 × 时间）
+control_matrix <- control_data_filtered %>%
+  select(SUBSTANCENAME, Year_Quarter, Price) %>%
+  pivot_wider(names_from = Year_Quarter, values_from = Price)
+
+rownames(control_matrix) <- control_matrix$SUBSTANCENAME
+control_matrix <- as.matrix(control_matrix[,-1])
+
+# ✅ Step 4: 处理 treatment 药物格式
+treatment_wide <- treatment_data %>%
+  select(Year_Quarter, Price) %>%
+  pivot_wider(names_from = Year_Quarter, values_from = Price)
+
+# 匹配时间点
+common_quarters <- intersect(colnames(control_matrix), colnames(treatment_wide))
+control_matrix <- control_matrix[, common_quarters]
+treatment_vector <- as.matrix(treatment_wide[, common_quarters])
+rownames(treatment_vector) <- "FLUCONAZOLE"
+
+# ✅ Step 5: 合并 matrix
+
+price_matrix_full <- rbind(control_matrix, treatment_vector)
+# 方法 1：按名字删除（推荐）
+price_matrix_full <- price_matrix_full[, colnames(price_matrix_full) != "NA-NA"]
+# 自动设置行名（用行号或药品名都行，如果你之前没有赋名）
+rownames(price_matrix_full) <- make.names(rownames(price_matrix_full), unique = TRUE)
+
+# 保留所有“没有 NA 值”的行
+price_matrix_filtered <- price_matrix_full[complete.cases(price_matrix_full), ]
+
+
+
+
+
+
+# ✅ Step 6: synthdid 估计
+library(synthdid)
+N0 <- nrow(price_matrix_filtered) - 1
+T0 <- 7  
+
+result <- synthdid_estimate(price_matrix_filtered, N0 = N0, T0 = T0)
+synthdid_plot(result)
+summary(result)
+synthdid_se(result)
+plot(result, overlay = 1)  # 更直观地看到 synthetic vs treated
+
+synthdid_se(result, method = "placebo")   # or try method = "bootstrap"
+
+# 查看你设置的 T0 是否超过列数
+cat("T0:", T0, "   ncol:", ncol(price_matrix_filtered), "\n")
+
+# 查看矩阵维度
+dim(price_matrix_filtered)
+
+
+
+
+summary(result)
+synthdid_se(result)
+att <- as.numeric(result)
+se <- synthdid_se(result)
+cat("ATT estimate:", round(att, 4), "\n")
+cat("Standard error:", round(se, 4), "\n")
+
+
+
+
+library(tibble)
+
+summary_table <- tibble(
+  ATT = round(att, 4),
+  Std_Error = round(se, 4)
+)
+print(summary_table)
+
+
+# 计算标准误（推荐使用placebo方法更稳健）
+se <- synthdid_se(result, method = "placebo")
+
+# 计算95%置信区间
+estimate <- as.numeric(result)
+lower_bound <- estimate - 1.96 * se
+upper_bound <- estimate + 1.96 * se
+
+# 输出结果
+cat("Estimate:", round(estimate, 4), "\n")
+cat("Standard Error:", round(se, 4), "\n")
+cat("95% CI: [", round(lower_bound, 4), ",", round(upper_bound, 4), "]\n")
+
+
+```
+
+
+2. I used DID method. The treatment group is THEOPHYLLINE ANHYDROUS. This is a drug inside the Cartel. I used synthesize control for drug outside the cartel.
+```{r}
+filtered_merged_data <- merged_data %>%
+  filter(SUBSTANCENAME == "THEOPHYLLINE ANHYDROUS")
+
+
+#计算price
+aggregated_data <- filtered_merged_data %>%
+  group_by(Year, Quarter, MARKETINGCATEGORYNAME) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  )
+
+aggregated_data <- aggregated_data %>%
+  mutate(Price = TotalAmountReimbursed / QuantityReimbursed)
+
+aggregated_data <- aggregated_data %>%
+  mutate(Year_Quarter = paste(Year, Quarter, sep = "-"))
+
+
+#summaeizeBudesonide的statistics
+
+
+
+
+
+
+
+aggregated_data <- aggregated_data %>% ungroup()
+
+# 针对整个数据集计算统计值
+overall_stats <- aggregated_data %>%
+  summarise(
+    Price_mean = mean(Price, na.rm = TRUE),
+    Price_sd = sd(Price, na.rm = TRUE),
+    Price_count = n(),
+    
+    QuantityReimbursed_mean = mean(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_sd = sd(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_count = n(),
+    
+    TotalAmountReimbursed_mean = mean(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_sd = sd(TotalAmountReimbursed, na.rm = TRUE), 
+    TotalAmountReimbursed_count = n()
+  )
+
+# 查看结果
+print(overall_stats)
+
+
+
+#filter出来ANDA
+
+aggregated_data_ANDA <- aggregated_data %>% filter(MARKETINGCATEGORYNAME == "ANDA")
+
+model <- lm(Price ~ Year_Quarter, data = aggregated_data_ANDA)
+
+ggplot(aggregated_data_ANDA, aes(x = Year_Quarter, y = Price)) +
+  geom_point() +
+  geom_smooth(method = "lm", col = "blue") +
+  labs(title = "Regression of Price on Year_Quarter",
+       x = "Year_Quarter",
+       y = "Price")
+
+
+
+# 安装并加载必要包（只需第一次安装）
+if (!require(devtools)) install.packages("devtools")
+if (!require(synthdid)) devtools::install_github("synth-inference/synthdid")
+
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(synthdid)
+
+# ✅ Step 1: 提取 treatment 药物（THEOPHYLLINE ANHYDROUS）
+treatment_data <- merged_data %>%
+  filter(MARKETINGCATEGORYNAME == "ANDA", SUBSTANCENAME == "THEOPHYLLINE ANHYDROUS") %>%
+  group_by(Year, Quarter) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  ) %>%
+  mutate(
+    Price = TotalAmountReimbursed / QuantityReimbursed,
+    Year_Quarter = paste(Year, Quarter, sep = "-")
+  ) %>%
+  ungroup()
+
+# ✅ Step 2: 构建 control group（同类 non-cartel drugs）
+control_data <- merged_data %>%
+  filter(
+    MARKETINGCATEGORYNAME == "ANDA",
+    (
+      str_detect(PHARM_CLASSES, regex("xanthine|methylxanthine", ignore_case = TRUE)) |
+      str_detect(SUBSTANCENAME, regex("phylline|buterol|sone|terol", ignore_case = TRUE))
+    ),
+    SUBSTANCENAME != "THEOPHYLLINE ANHYDROUS"
+  ) %>%
+  group_by(SUBSTANCENAME, Year, Quarter) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  ) %>%
+  mutate(Price = TotalAmountReimbursed / QuantityReimbursed) %>%
+  ungroup() %>%
+  mutate(Year_Quarter = paste(Year, Quarter, sep = "-"))
+
+
+# 针对整个数据集计算统计值
+overall_stats <- control_data %>%
+  summarise(
+    Price_mean = mean(Price, na.rm = TRUE),
+    Price_sd = sd(Price, na.rm = TRUE),
+    Price_count = n(),
+    
+    QuantityReimbursed_mean = mean(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_sd = sd(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_count = n(),
+    
+    TotalAmountReimbursed_mean = mean(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_sd = sd(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_count = n()
+  )
+
+# 查看结果
+print(overall_stats)
+
+# ✅ Step 3: wide format（药品 × 时间）
+control_matrix <- control_data %>%
+  select(SUBSTANCENAME, Year_Quarter, Price) %>%
+  pivot_wider(names_from = Year_Quarter, values_from = Price)
+
+rownames(control_matrix) <- control_matrix$SUBSTANCENAME
+control_matrix <- as.matrix(control_matrix[,-1])
+
+# ✅ Step 4: 处理 treatment 药物格式
+treatment_wide <- treatment_data %>%
+  select(Year_Quarter, Price) %>%
+  pivot_wider(names_from = Year_Quarter, values_from = Price)
+
+# 匹配时间点
+common_quarters <- intersect(colnames(control_matrix), colnames(treatment_wide))
+control_matrix <- control_matrix[, common_quarters]
+treatment_vector <- as.matrix(treatment_wide[, common_quarters])
+rownames(treatment_vector) <- "THEOPHYLLINE ANHYDROUS"
+
+# ✅ Step 5: 合并 matrix
+
+price_matrix_full <- rbind(control_matrix, treatment_vector)
+# 方法 1：按名字删除（推荐）
+price_matrix_full <- price_matrix_full[, colnames(price_matrix_full) != "NA-NA"]
+# 自动设置行名（用行号或药品名都行，如果你之前没有赋名）
+rownames(price_matrix_full) <- make.names(rownames(price_matrix_full), unique = TRUE)
+
+# 保留所有“没有 NA 值”的行
+price_matrix_filtered <- price_matrix_full[complete.cases(price_matrix_full), ]
+
+
+
+
+
+
+# ✅ Step 6: synthdid 估计
+library(synthdid)
+N0 <- nrow(price_matrix_filtered) - 1
+T0 <- 13  
+
+result <- synthdid_estimate(price_matrix_filtered, N0 = N0, T0 = T0)
+synthdid_plot(result)
+summary(result)
+synthdid_se(result)
+plot(result, overlay = 1)  # 更直观地看到 synthetic vs treated
+
+synthdid_se(result, method = "placebo")   # or try method = "bootstrap"
+
+# 查看你设置的 T0 是否超过列数
+cat("T0:", T0, "   ncol:", ncol(price_matrix_filtered), "\n")
+
+# 查看矩阵维度
+dim(price_matrix_filtered)
+
+
+
+
+summary(result)
+synthdid_se(result)
+att <- as.numeric(result)
+se <- synthdid_se(result)
+cat("ATT estimate:", round(att, 4), "\n")
+cat("Standard error:", round(se, 4), "\n")
+
+
+
+
+library(tibble)
+
+summary_table <- tibble(
+  ATT = round(att, 4),
+  Std_Error = round(se, 4)
+)
+print(summary_table)
+
+
+# 计算标准误（推荐使用placebo方法更稳健）
+se <- synthdid_se(result, method = "placebo")
+
+# 计算95%置信区间
+estimate <- as.numeric(result)
+lower_bound <- estimate - 1.96 * se
+upper_bound <- estimate + 1.96 * se
+
+# 输出结果
+cat("Estimate:", round(estimate, 4), "\n")
+cat("Standard Error:", round(se, 4), "\n")
+cat("95% CI: [", round(lower_bound, 4), ",", round(upper_bound, 4), "]\n")
+
+
+```
+3. I used DID method. The treatment group is THEOPHYLLINE ANHYDROUS. This is a drug inside the Cartel. I used synthesize control for drug outside the cartel.
+```{r}
+filtered_merged_data <- merged_data %>%
+  filter(SUBSTANCENAME == "FLUOCINONIDE")
+
+
+#计算price
+aggregated_data <- filtered_merged_data %>%
+  group_by(Year, Quarter, MARKETINGCATEGORYNAME) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  )
+
+aggregated_data <- aggregated_data %>%
+  mutate(Price = TotalAmountReimbursed / QuantityReimbursed)
+
+aggregated_data <- aggregated_data %>%
+  mutate(Year_Quarter = paste(Year, Quarter, sep = "-"))
+
+
+#summaeizeBudesonide的statistics
+
+
+
+
+
+
+
+aggregated_data <- aggregated_data %>% ungroup()
+
+# 针对整个数据集计算统计值
+overall_stats <- aggregated_data %>%
+  summarise(
+    Price_mean = mean(Price, na.rm = TRUE),
+    Price_sd = sd(Price, na.rm = TRUE),
+    Price_count = n(),
+    
+    QuantityReimbursed_mean = mean(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_sd = sd(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_count = n(),
+    
+    TotalAmountReimbursed_mean = mean(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_sd = sd(TotalAmountReimbursed, na.rm = TRUE), 
+    TotalAmountReimbursed_count = n()
+  )
+
+# 查看结果
+print(overall_stats)
+
+
+
+#filter出来ANDA
+
+aggregated_data_ANDA <- aggregated_data %>% filter(MARKETINGCATEGORYNAME == "ANDA")
+
+model <- lm(Price ~ Year_Quarter, data = aggregated_data_ANDA)
+
+ggplot(aggregated_data_ANDA, aes(x = Year_Quarter, y = Price)) +
+  geom_point() +
+  geom_smooth(method = "lm", col = "blue") +
+  labs(title = "Regression of Price on Year_Quarter",
+       x = "Year_Quarter",
+       y = "Price")
+
+
+
+# 安装并加载必要包（只需第一次安装）
+if (!require(devtools)) install.packages("devtools")
+if (!require(synthdid)) devtools::install_github("synth-inference/synthdid")
+
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(synthdid)
+
+# ✅ Step 1: 提取 treatment 药物（THEOPHYLLINE ANHYDROUS）
+treatment_data <- merged_data %>%
+  filter(MARKETINGCATEGORYNAME == "ANDA", SUBSTANCENAME == "FLUOCINONIDE") %>%
+  group_by(Year, Quarter) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  ) %>%
+  mutate(
+    Price = TotalAmountReimbursed / QuantityReimbursed,
+    Year_Quarter = paste(Year, Quarter, sep = "-")
+  ) %>%
+  ungroup()
+
+# ✅ Step 2: 构建 control group（同类 non-cartel drugs）
+control_data <- merged_data %>%
+  filter(
+    MARKETINGCATEGORYNAME == "ANDA",
+    (
+      str_detect(PHARM_CLASSES, regex("corticosteroid", ignore_case = TRUE)) 
+    ),
+    SUBSTANCENAME != "FLUOCINONIDE"
+  ) %>%
+  group_by(SUBSTANCENAME, Year, Quarter) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  ) %>%
+  mutate(Price = TotalAmountReimbursed / QuantityReimbursed) %>%
+  ungroup() %>%
+  mutate(Year_Quarter = paste(Year, Quarter, sep = "-"))
+
+
+# 针对整个数据集计算统计值
+overall_stats <- control_data %>%
+  summarise(
+    Price_mean = mean(Price, na.rm = TRUE),
+    Price_sd = sd(Price, na.rm = TRUE),
+    Price_count = n(),
+    
+    QuantityReimbursed_mean = mean(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_sd = sd(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_count = n(),
+    
+    TotalAmountReimbursed_mean = mean(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_sd = sd(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_count = n()
+  )
+
+# 查看结果
+print(overall_stats)
+
+# ✅ Step 3: wide format（药品 × 时间）
+control_matrix <- control_data %>%
+  select(SUBSTANCENAME, Year_Quarter, Price) %>%
+  pivot_wider(names_from = Year_Quarter, values_from = Price)
+
+rownames(control_matrix) <- control_matrix$SUBSTANCENAME
+control_matrix <- as.matrix(control_matrix[,-1])
+
+# ✅ Step 4: 处理 treatment 药物格式
+treatment_wide <- treatment_data %>%
+  select(Year_Quarter, Price) %>%
+  pivot_wider(names_from = Year_Quarter, values_from = Price)
+
+# 匹配时间点
+common_quarters <- intersect(colnames(control_matrix), colnames(treatment_wide))
+control_matrix <- control_matrix[, common_quarters]
+treatment_vector <- as.matrix(treatment_wide[, common_quarters])
+rownames(treatment_vector) <- "FLUOCINONIDE"
+
+# ✅ Step 5: 合并 matrix
+
+price_matrix_full <- rbind(control_matrix, treatment_vector)
+# 方法 1：按名字删除（推荐）
+price_matrix_full <- price_matrix_full[, colnames(price_matrix_full) != "NA-NA"]
+# 自动设置行名（用行号或药品名都行，如果你之前没有赋名）
+rownames(price_matrix_full) <- make.names(rownames(price_matrix_full), unique = TRUE)
+
+# 保留所有“没有 NA 值”的行
+price_matrix_filtered <- price_matrix_full[complete.cases(price_matrix_full), ]
+
+
+
+
+
+
+# ✅ Step 6: synthdid 估计
+library(synthdid)
+N0 <- nrow(price_matrix_filtered) - 1
+T0 <- 10  
+
+result <- synthdid_estimate(price_matrix_filtered, N0 = N0, T0 = T0)
+synthdid_plot(result)
+summary(result)
+synthdid_se(result)
+plot(result, overlay = 1)  # 更直观地看到 synthetic vs treated
+
+synthdid_se(result, method = "placebo")   # or try method = "bootstrap"
+
+# 查看你设置的 T0 是否超过列数
+cat("T0:", T0, "   ncol:", ncol(price_matrix_filtered), "\n")
+
+# 查看矩阵维度
+dim(price_matrix_filtered)
+
+
+
+
+summary(result)
+synthdid_se(result)
+att <- as.numeric(result)
+se <- synthdid_se(result)
+cat("ATT estimate:", round(att, 4), "\n")
+cat("Standard error:", round(se, 4), "\n")
+
+
+
+
+library(tibble)
+
+summary_table <- tibble(
+  ATT = round(att, 4),
+  Std_Error = round(se, 4)
+)
+print(summary_table)
+
+
+# 计算标准误（推荐使用placebo方法更稳健）
+se <- synthdid_se(result, method = "placebo")
+
+# 计算95%置信区间
+estimate <- as.numeric(result)
+lower_bound <- estimate - 1.96 * se
+upper_bound <- estimate + 1.96 * se
+
+# 输出结果
+cat("Estimate:", round(estimate, 4), "\n")
+cat("Standard Error:", round(se, 4), "\n")
+cat("95% CI: [", round(lower_bound, 4), ",", round(upper_bound, 4), "]\n")
+
+
+```
+
+```{R}
+
+#简单的数据清理结束，接下来我们要寻找一个可以和Budesonide匹配但是没有在cartel里面的药:Fluticasone Propionate
+#先挑选出stanbstance name，因为这些药中都有Budesonide成分。在分开ANDA和NDC去研究不同的价格变化
+
+filtered_merged_data_1 <- merged_data %>%
+  filter(SUBSTANCENAME == "MONTELUKAST SODIUM")
+
+
+#计算price
+aggregated_data_1 <- filtered_merged_data_1 %>%
+  group_by(Year, Quarter, MARKETINGCATEGORYNAME) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  )
+
+aggregated_data_1 <- aggregated_data_1 %>%
+  mutate(Price = TotalAmountReimbursed / QuantityReimbursed)
+
+aggregated_data_1 <- aggregated_data_1 %>%
+  mutate(Year_Quarter = paste(Year, Quarter, sep = "-"))
+
+
+#summaeizeBudesonide的statistics
+
+
+
+
+
+
+
+aggregated_data_1 <- aggregated_data_1 %>% ungroup()
+
+# 针对整个数据集计算统计值
+overall_stats <- aggregated_data_1 %>%
+  summarise(
+    Price_mean = mean(Price, na.rm = TRUE),
+    Price_sd = sd(Price, na.rm = TRUE),
+    Price_min = min(Price, na.rm = TRUE),
+    Price_max = max(Price, na.rm = TRUE),
+    Price_count = n(),
+    
+    QuantityReimbursed_mean = mean(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_sd = sd(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_min = min(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_max = max(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_count = n(),
+    
+    TotalAmountReimbursed_mean = mean(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_sd = sd(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_min = min(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_max = max(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_count = n()
+  )
+
+# 查看结果
+print(overall_stats)
+
+#filter出来ANDA
+
+aggregated_data_ANDA_1 <- aggregated_data_1 %>% filter(MARKETINGCATEGORYNAME == "ANDA")
+
+model <- lm(Price ~ Year_Quarter, data = aggregated_data_ANDA_1)
+
+ggplot(aggregated_data_ANDA_1, aes(x = Year_Quarter, y = Price)) +
+  geom_point() +
+  geom_smooth(method = "lm", col = "blue") +
+  labs(title = "Regression of Price on Year_Quarter",
+       x = "Year_Quarter",
+       y = "Price")
+
+
+#用DID的方法run regression
+aggregated_data_ANDA_1 <- aggregated_data_ANDA_1 %>%
+  mutate(drugname = "MONTELUKAST SODIUM")
+aggregated_data_ANDA <- aggregated_data_ANDA %>%
+  mutate(drugname = "THEOPHYLLINE ANHYDROUS")
+DID_dataset <- rbind(aggregated_data_ANDA_1, aggregated_data_ANDA)
+
+
+install.packages("fixest")
+library(fixest)
+DID_dataset <- DID_dataset %>%
+  mutate(
+    DuringCartel = ifelse(Year_Quarter >= "2014-2" & Year_Quarter <= "2016-3", 1, 0),
+    PostCartel = ifelse(Year_Quarter > "2016-3", 1, 0),
+    Treatment = ifelse(drugname == "THEOPHYLLINE ANHYDROUS", 1, 0),
+    DuringCartel_Treatment = DuringCartel * Treatment,
+    PostCartel_Treatment = PostCartel * Treatment
+  )
+
+did_model <- feols(Price ~ DuringCartel + PostCartel + Treatment + DuringCartel_Treatment + PostCartel_Treatment | Year_Quarter, data = DID_dataset)
+
+summary(did_model)
+
+coefplot(did_model)
+
+
+
+ggplot(DID_dataset, aes(x = Year_Quarter, y = Price, color = as.factor(Treatment), group = as.factor(Treatment))) +
+  geom_line(size = 1) +  
+  geom_point(size = 2) + 
+  labs(title = "Price Trend Before and After Cartel",
+       x = "Year-Quarter",
+       y = "Price",
+       color = "Treatment Group") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+library(ggplot2)
+
+# 先统一把 Year_Quarter 转成 factor，并确保顺序一致
+# 提取所有用到的数据的时间点，合并后去重再排序
+all_quarters <- unique(c(DID_dataset$Year_Quarter, teva_aggregated$Year_Quarter))
+ordered_levels <- sort(all_quarters)  # 字符串排序，如果你有特殊顺序可以自定义
+
+# 转换为有序 factor
+DID_dataset$Year_Quarter <- factor(DID_dataset$Year_Quarter, levels = ordered_levels)
+teva_aggregated$Year_Quarter <- factor(teva_aggregated$Year_Quarter, levels = ordered_levels)
+
+# 画图
+ggplot() +
+  # Treatment & Control 价格走势
+  geom_line(data = DID_dataset, aes(x = Year_Quarter, y = Price, color = as.factor(Treatment), group = as.factor(Treatment)), size = 1) +
+  geom_point(data = DID_dataset, aes(x = Year_Quarter, y = Price, color = as.factor(Treatment), group = as.factor(Treatment)), size = 2) +
+
+  # Teva 单独线（蓝色虚线 + 三角点）
+  geom_line(data = teva_aggregated, aes(x = Year_Quarter, y = Price), color = "blue", size = 1.2, linetype = "twodash") +
+  geom_point(data = teva_aggregated, aes(x = Year_Quarter, y = Price), color = "blue", size = 2.5, shape = 17) +
+
+  # 添加 cartel 时期垂直线
+  geom_vline(xintercept = which(levels(DID_dataset$Year_Quarter) == "2014-2")[1], linetype = "dashed", color = "black") +
+  geom_vline(xintercept = which(levels(DID_dataset$Year_Quarter) == "2016-3")[1], linetype = "dashed", color = "black") +
+
+  labs(
+    title = "Price Trend Before and After Cartel\nHighlighting Teva Pharmaceuticals USA., Inc (THEOPHYLLINE ANHYDROUS)",
+    x = "Year-Quarter",
+    y = "Price",
+    color = "Treatment Group"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(color = guide_legend(override.aes = list(shape = 16)))
+
+
+
+```
+
+
+
+
+
+
+
+
+3.I used DID method. The treatment group is CABERGOLINE. This is a drug inside the Cartel. The Control group is BROMOCRIPTINE MESYLATE. This is a drug outside the cartel. CABERGOLIN and BROMOCRIPTINE MESYLATE are similar and have same function.
+
+
+```{r}
+filtered_merged_data <- merged_data %>%
+  filter(SUBSTANCENAME == "CABERGOLINE")
+unique(filtered_merged_data$LABELERNAME)
+
+
+#计算price
+aggregated_data <- filtered_merged_data %>%
+  group_by(Year, Quarter, MARKETINGCATEGORYNAME) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  )
+
+aggregated_data <- aggregated_data %>%
+  mutate(Price = TotalAmountReimbursed / QuantityReimbursed)
+
+aggregated_data <- aggregated_data %>%
+  mutate(Year_Quarter = paste(Year, Quarter, sep = "-"))
+
+
+#summaeizeBudesonide的statistics
+
+
+
+
+
+
+
+aggregated_data <- aggregated_data %>% ungroup()
+
+# 针对整个数据集计算统计值
+overall_stats <- aggregated_data %>%
+  summarise(
+    Price_mean = mean(Price, na.rm = TRUE),
+    Price_sd = sd(Price, na.rm = TRUE),
+    Price_count = n(),
+    
+    QuantityReimbursed_mean = mean(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_sd = sd(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_count = n(),
+    
+    TotalAmountReimbursed_mean = mean(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_sd = sd(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_count = n()
+  )
+
+# 查看结果
+print(overall_stats)
+
+
+
+#filter出来ANDA
+
+aggregated_data_ANDA <- aggregated_data %>% filter(MARKETINGCATEGORYNAME == "ANDA")
+
+model <- lm(Price ~ Year_Quarter, data = aggregated_data_ANDA)
+
+ggplot(aggregated_data_ANDA, aes(x = Year_Quarter, y = Price)) +
+  geom_point() +
+  geom_smooth(method = "lm", col = "blue") +
+  labs(title = "Regression of Price on Year_Quarter",
+       x = "Year_Quarter",
+       y = "Price")
+
+
+
+
+
+#简单的数据清理结束，接下来我们要寻找一个可以和Budesonide匹配但是没有在cartel里面的药:Fluticasone Propionate
+#先挑选出stanbstance name，因为这些药中都有Budesonide成分。在分开ANDA和NDC去研究不同的价格变化
+
+filtered_merged_data_1 <- merged_data %>%
+  filter(SUBSTANCENAME == "BROMOCRIPTINE MESYLATE")
+
+
+#计算price
+aggregated_data_1 <- filtered_merged_data_1 %>%
+  group_by(Year, Quarter, MARKETINGCATEGORYNAME) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  )
+
+aggregated_data_1 <- aggregated_data_1 %>%
+  mutate(Price = TotalAmountReimbursed / QuantityReimbursed)
+
+aggregated_data_1 <- aggregated_data_1 %>%
+  mutate(Year_Quarter = paste(Year, Quarter, sep = "-"))
+
+
+#summaeizeBudesonide的statistics
+
+
+
+
+
+
+
+aggregated_data_1 <- aggregated_data_1 %>% ungroup()
+
+# 针对整个数据集计算统计值
+overall_stats <- aggregated_data_1 %>%
+  summarise(
+    Price_mean = mean(Price, na.rm = TRUE),
+    Price_sd = sd(Price, na.rm = TRUE),
+    Price_count = n(),
+    
+    QuantityReimbursed_mean = mean(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_sd = sd(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_count = n(),
+    
+    TotalAmountReimbursed_mean = mean(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_sd = sd(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_count = n()
+  )
+
+# 查看结果
+print(overall_stats)
+
+#filter出来ANDA
+
+aggregated_data_ANDA_1 <- aggregated_data_1 %>% filter(MARKETINGCATEGORYNAME == "ANDA")
+
+model <- lm(Price ~ Year_Quarter, data = aggregated_data_ANDA_1)
+
+ggplot(aggregated_data_ANDA_1, aes(x = Year_Quarter, y = Price)) +
+  geom_point() +
+  geom_smooth(method = "lm", col = "blue") +
+  labs(title = "Regression of Price on Year_Quarter",
+       x = "Year_Quarter",
+       y = "Price")
+
+
+#用DID的方法run regression
+aggregated_data_ANDA_1 <- aggregated_data_ANDA_1 %>%
+  mutate(drugname = "BROMOCRIPTINE MESYLATE")
+aggregated_data_ANDA <- aggregated_data_ANDA %>%
+  mutate(drugname = "CABERGOLINE")
+DID_dataset <- rbind(aggregated_data_ANDA_1, aggregated_data_ANDA)
+
+
+install.packages("fixest")
+library(fixest)
+DID_dataset <- DID_dataset %>%
+  mutate(
+    DuringCartel = ifelse(Year_Quarter >= "2014-2" & Year_Quarter <= "2016-3", 1, 0),
+    PostCartel = ifelse(Year_Quarter > "2016-3", 1, 0),
+    Treatment = ifelse(drugname == "CABERGOLINE", 1, 0),
+    DuringCartel_Treatment = DuringCartel * Treatment,
+    PostCartel_Treatment = PostCartel * Treatment
+  )
+
+did_model <- feols(Price ~ DuringCartel + PostCartel + Treatment + DuringCartel_Treatment + PostCartel_Treatment | Year_Quarter, data = DID_dataset)
+
+summary(did_model)
+
+coefplot(did_model)
+
+
+
+ggplot(DID_dataset, aes(x = Year_Quarter, y = Price, color = as.factor(Treatment), group = as.factor(Treatment))) +
+  geom_line(size = 1) +  
+  geom_point(size = 2) + 
+  labs(title = "Price Trend Before and After Cartel",
+       x = "Year-Quarter",
+       y = "Price",
+       color = "Treatment Group") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+# Step 1: 从 merged_data 中提取 CABERGOLINE + Teva 公司数据
+teva_raw_data <- merged_data %>%
+  filter(SUBSTANCENAME == "CABERGOLINE",
+         LABELERNAME == "Teva Pharmaceuticals USA., Inc")
+
+# Step 2: 聚合并计算 Price（总金额 / 总数量）
+teva_aggregated <- teva_raw_data %>%
+  group_by(Year, Quarter) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  ) %>%
+  mutate(
+    Price = TotalAmountReimbursed / QuantityReimbursed,
+    Year_Quarter = paste(Year, Quarter, sep = "-")
+  ) %>%
+  ungroup()
+
+# Step 3: 保证 Year_Quarter 是因子 + 排好顺序（与原始图一致）
+teva_aggregated$Year_Quarter <- factor(teva_aggregated$Year_Quarter, 
+                                       levels = sort(unique(DID_dataset$Year_Quarter)))
+DID_dataset$Year_Quarter <- factor(DID_dataset$Year_Quarter,
+                                   levels = levels(teva_aggregated$Year_Quarter))
+
+# Step 4: 画图：DID_dataset + Teva 的线
+ggplot() +
+  # 原来的 Treatment & Control 价格走势
+  geom_line(data = DID_dataset, aes(x = Year_Quarter, y = Price, color = as.factor(Treatment), group = as.factor(Treatment)), size = 1) +
+  geom_point(data = DID_dataset, aes(x = Year_Quarter, y = Price, color = as.factor(Treatment), group = as.factor(Treatment)), size = 2) +
+
+  # Teva 单独线（蓝色虚线 + 三角点）
+  geom_line(data = teva_aggregated, aes(x = Year_Quarter, y = Price), color = "blue", size = 1.2, linetype = "twodash") +
+  geom_point(data = teva_aggregated, aes(x = Year_Quarter, y = Price), color = "blue", size = 2.5, shape = 17) +
+
+  # 添加 cartel 时期垂直线
+  geom_vline(xintercept = which(levels(DID_dataset$Year_Quarter) == "2014-2")[1], linetype = "dashed", color = "black") +
+  geom_vline(xintercept = which(levels(DID_dataset$Year_Quarter) == "2016-3")[1], linetype = "dashed", color = "black") +
+
+  labs(
+    title = "Price Trend Before and After Cartel\nHighlighting Teva Pharmaceuticals USA., Inc (CABERGOLINE)",
+    x = "Year-Quarter",
+    y = "Price",
+    color = "Treatment Group"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  guides(color = guide_legend(override.aes = list(shape = 16)))
+
+
+
+
+
+```
+3.2
+
+```{r}
+# Step 1: 提取 Teva 销量数据（CABERGOLINE）
+teva_volume <- merged_data %>%
+  filter(SUBSTANCENAME == "CABERGOLINE",
+         LABELERNAME == "Teva Pharmaceuticals USA, Inc.") %>%
+  group_by(Year, Quarter) %>%
+  summarise(Units_Reimbursed = sum(`Units Reimbursed`, na.rm = TRUE)) %>%
+  mutate(Year_Quarter = paste(Year, Quarter, sep = "-")) %>%
+  ungroup()
+
+# Step 2: 转换时间为 factor 并排序
+teva_volume$Year_Quarter <- factor(teva_volume$Year_Quarter, 
+                                   levels = sort(unique(teva_volume$Year_Quarter)))
+
+# Step 3: 绘制销量趋势图
+library(ggplot2)
+ggplot(teva_volume, aes(x = Year_Quarter, y = Units_Reimbursed)) +
+  geom_line(color = "steelblue", size = 1) +
+  geom_point(size = 2) +
+  geom_vline(xintercept = which(levels(teva_volume$Year_Quarter) == "2014-4"), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = which(levels(teva_volume$Year_Quarter) == "2015-1"), linetype = "dashed", color = "red") +
+  labs(title = "Teva's CABERGOLINE Units Reimbursed Over Time",
+       subtitle = "Dashed red lines = Greenstone enters + Teva agrees to exit customer",
+       x = "Year-Quarter", y = "Units Reimbursed") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+
+
+```{R}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+
+# Step 1: Define event quarter (cartel end time)
+event_quarter <- 2012 + 2/4  # 2016 Q3 = 2016 + 2/4
+
+# Step 2: Create 'event_time' variable
+DID_dataset <- DID_dataset %>%
+  mutate(
+    Year = as.numeric(Year),
+    Quarter = as.numeric(Quarter),
+    event_time = (Year + (Quarter - 1)/4) - event_quarter
+  )
+
+# Step 3: Calculate average price per event_time
+event_avg_price <- DID_dataset %>%
+  group_by(event_time) %>%
+  summarise(avg_price = mean(Price, na.rm = TRUE)) %>%
+  ungroup()
+
+# Step 4: Fit a linear trend using pre-event period (event_time < 0)
+pre_event_data <- event_avg_price %>% filter(event_time < 0)
+
+pre_trend_model <- lm(avg_price ~ event_time, data = pre_event_data)
+
+# Step 5: Predict normal prices and calculate abnormal prices
+event_avg_price <- event_avg_price %>%
+  mutate(
+    predicted_price = predict(pre_trend_model, newdata = event_avg_price),
+    abnormal_price = avg_price - predicted_price
+  )
+
+# Step 6: Plot actual vs predicted price
+ggplot(event_avg_price, aes(x = event_time)) +
+  geom_line(aes(y = avg_price), color = "blue") +
+  geom_line(aes(y = predicted_price), color = "green", linetype = "dashed") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Actual vs Predicted Price Around Cartel End",
+       x = "Event Time (Quarters Relative to Event)",
+       y = "Price per Unit") +
+  theme_minimal()
+
+# Step 7: Plot abnormal price (event study result!)
+ggplot(event_avg_price, aes(x = event_time, y = abnormal_price)) +
+  geom_line(color = "purple") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Abnormal Price Around Cartel End",
+       x = "Event Time (Quarters Relative to Event)",
+       y = "Abnormal Price per Unit") +
+  theme_minimal()
+
+
+```
+
+```{r}
+library(dplyr)
+library(stringr)
+library(readxl)
+
+# 读取 cartel 药物名单
+cartel_drugs <- read_excel("~/Desktop/Research Data/Drug info dataset(已自动还原).xlsx")
+
+# 把 Drug_Cartel 这一列转成大写
+cartel_list <- toupper(cartel_drugs$Drug_Cartel)
+filtered_data <- merged_data %>%
+  filter(str_detect(SUBSTANCENAME, str_c(cartel_list, collapse = "|")))
+
+
+filtered_data <- filtered_data %>%
+  filter(str_detect(MARKETINGCATEGORYNAME, "ANDA"))
+filtered_data <- filtered_data %>%
+  mutate(
+    `Total Amount Reimbursed` = as.numeric(`Total Amount Reimbursed`),
+    `Units Reimbursed` = as.numeric(`Units Reimbursed`),
+    price_per_unit = `Total Amount Reimbursed` / `Units Reimbursed`
+  ) %>%
+  filter(!is.na(price_per_unit), is.finite(price_per_unit))
+
+filtered_data <- filtered_data %>%
+  mutate(
+    quarter_numeric = as.numeric(Year) + (as.numeric(Quarter) - 1) / 4,
+    event_quarter = 2016 + (3 - 1) / 4,  # 2016Q3 = 2016.5
+    event_time = round((quarter_numeric - event_quarter) * 4)  # 用季度为单位
+    
+  )
+
+event_avg_price <- filtered_data %>%
+  group_by(event_time) %>%
+  summarise(avg_price = mean(price_per_unit, na.rm = TRUE)) %>%
+  arrange(event_time)
+
+library(ggplot2)
+
+ggplot(event_avg_price, aes(x = event_time, y = avg_price)) +
+  geom_line(color = "blue") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Average Price Around Cartel End",
+       x = "Event Time (Quarters Relative to Cartel End)",
+       y = "Average Price per Unit") +
+  theme_minimal()
+
+library(ggplot2)
+
+
+
+```
+```{R}
+# 设定阶段划分（你也可以自定义）
+event_avg_price <- event_avg_price %>%
+  mutate(
+    time_group = case_when(
+      event_time < -4 ~ "Pre-Cartel",
+      event_time >= -4 & event_time <= 0 ~ "During-Cartel",
+      event_time > 0 ~ "Post-Cartel"
+    )
+  )
+
+# 1. 输出各阶段的平均价格
+group_means <- event_avg_price %>%
+  group_by(time_group) %>%
+  summarise(mean_price = mean(avg_price, na.rm = TRUE))
+
+print(group_means)
+
+# 2. 用t检验比较 Pre vs Post 是否显著不同
+pre_prices <- event_avg_price$avg_price[event_avg_price$time_group == "Pre-Cartel"]
+post_prices <- event_avg_price$avg_price[event_avg_price$time_group == "Post-Cartel"]
+
+t_test_result <- t.test(pre_prices, post_prices)
+print(t_test_result)
+
+# 3. 可视化：加上三段平均线
+pre_mean <- mean(pre_prices, na.rm = TRUE)
+post_mean <- mean(post_prices, na.rm = TRUE)
+
+ggplot(event_avg_price, aes(x = event_time, y = avg_price)) +
+  geom_line(color = "blue") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = pre_mean, color = "darkgreen", linetype = "dotted") +
+  geom_hline(yintercept = post_mean, color = "darkorange", linetype = "dotted") +
+  annotate("text", x = -15, y = pre_mean + 0.2, label = "Pre-Cartel Avg", color = "darkgreen") +
+  annotate("text", x = 15, y = post_mean + 0.2, label = "Post-Cartel Avg", color = "darkorange") +
+  labs(title = "Price Stickiness After Cartel Ends",
+       x = "Event Time (Quarters Relative to Cartel End)",
+       y = "Average Price per Unit") +
+  theme_minimal()
+
+
+```
+
+
+4.1
+
+
+Pick another pair of drugs. Run the same code. and then included the difference between ANDA and NDC.  PARICALCITOL(NDC的价格也挺全的) and CALCITRIOL(改一下，只算2017之后的) （研究
+
+```{r}
+
+#先挑选出stanbstance name，因为这些药中都有Budesonide成分。在分开ANDA和NDC去研究不同的价格变化
+
+filtered_merged_data <- merged_data %>%
+  filter(SUBSTANCENAME == "PARICALCITOL")
+
+
+#计算price
+aggregated_data<- filtered_merged_data %>%
+  group_by(Year, Quarter, MARKETINGCATEGORYNAME) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  )
+
+aggregated_data <- aggregated_data %>%
+  mutate(Price = TotalAmountReimbursed / QuantityReimbursed)
+
+aggregated_data <- aggregated_data %>%
+  mutate(Year_Quarter = paste(Year, Quarter, sep = "-"))
+aggregated_data <- aggregated_data %>%
+  filter(Year >= 2017)
+
+
+#summaeizeBudesonide的statistics
+
+
+
+
+
+
+
+aggregated_data <- aggregated_data %>% ungroup()
+
+# 针对整个数据集计算统计值
+overall_stats <- aggregated_data %>%
+  summarise(
+    Price_mean = mean(Price, na.rm = TRUE),
+    Price_sd = sd(Price, na.rm = TRUE),
+    Price_min = min(Price, na.rm = TRUE),
+    Price_max = max(Price, na.rm = TRUE),
+    Price_count = n(),
+    
+    QuantityReimbursed_mean = mean(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_sd = sd(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_min = min(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_max = max(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_count = n(),
+    
+    TotalAmountReimbursed_mean = mean(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_sd = sd(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_min = min(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_max = max(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_count = n()
+  )
+
+# 查看结果
+print(overall_stats)
+
+
+
+#filter出来ANDA
+
+aggregated_data_ANDA <- aggregated_data %>% filter(MARKETINGCATEGORYNAME == "ANDA")
+
+model <- lm(Price ~ Year_Quarter, data = aggregated_data_ANDA)
+
+ggplot(aggregated_data_ANDA, aes(x = Year_Quarter, y = Price)) +
+  geom_point() +
+  geom_smooth(method = "lm", col = "blue") +
+  labs(title = "Regression of Price on Year_Quarter",
+       x = "Year_Quarter",
+       y = "Price")
+
+#filter出来NDA
+aggregated_data_NDA <- aggregated_data %>% filter(MARKETINGCATEGORYNAME == "NDA")
+
+model <- lm(Price ~ Year_Quarter, data = aggregated_data_NDA)
+
+ggplot(aggregated_data_NDA, aes(x = Year_Quarter, y = Price)) +
+  geom_point() +
+  geom_smooth(method = "lm", col = "red") +
+  labs(title = "Regression of Price on Year_Quarter",
+       x = "Year_Quarter",
+       y = "Price")
+
+```
+
+4.2
+
+```{r}
+# Step 1: 提取 Teva 销量数据（CABERGOLINE）
+teva_volume <- merged_data %>%
+  filter(SUBSTANCENAME == "CABERGOLINE",
+         LABELERNAME == "Teva Pharmaceuticals USA, Inc.") %>%
+  group_by(Year, Quarter) %>%
+  summarise(Units_Reimbursed = sum(`Units Reimbursed`, na.rm = TRUE)) %>%
+  mutate(Year_Quarter = paste(Year, Quarter, sep = "-")) %>%
+  ungroup()
+
+# Step 2: 转换时间为 factor 并排序
+teva_volume$Year_Quarter <- factor(teva_volume$Year_Quarter, 
+                                   levels = sort(unique(teva_volume$Year_Quarter)))
+
+# Step 3: 绘制销量趋势图
+library(ggplot2)
+ggplot(teva_volume, aes(x = Year_Quarter, y = Units_Reimbursed)) +
+  geom_line(color = "steelblue", size = 1) +
+  geom_point(size = 2) +
+  geom_vline(xintercept = which(levels(teva_volume$Year_Quarter) == "2014-4"), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = which(levels(teva_volume$Year_Quarter) == "2015-1"), linetype = "dashed", color = "red") +
+  labs(title = "Teva's CABERGOLINE Units Reimbursed Over Time",
+       subtitle = "Dashed red lines = Greenstone enters + Teva agrees to exit customer",
+       x = "Year-Quarter", y = "Units Reimbursed") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+
+
+
+
+
+
+
+2.2 generate出control group 里面的ANDA和NDA---CALCITRIOL
+```{r}
+
+
+filtered_merged_data_C <- merged_data %>%
+  filter(SUBSTANCENAME == "CALCITRIOL")
+
+
+#计算price
+aggregated_data_C<- filtered_merged_data_C %>%
+  group_by(Year, Quarter, MARKETINGCATEGORYNAME) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  )
+
+aggregated_data_C <- aggregated_data_C %>%
+  mutate(Price = TotalAmountReimbursed / QuantityReimbursed)
+
+aggregated_data_C <- aggregated_data_C %>%
+  mutate(Year_Quarter = paste(Year, Quarter, sep = "-"))
+
+aggregated_data_C <- aggregated_data_C %>%
+  filter(Year >= 2017)
+
+
+#summaeizeBudesonide的statistics
+
+
+
+
+
+
+
+aggregated_data_C <- aggregated_data_C %>% ungroup()
+
+# 针对整个数据集计算统计值
+overall_stats <- aggregated_data_C %>%
+  summarise(
+    Price_mean = mean(Price, na.rm = TRUE),
+    Price_sd = sd(Price, na.rm = TRUE),
+    Price_min = min(Price, na.rm = TRUE),
+    Price_max = max(Price, na.rm = TRUE),
+    Price_count = n(),
+    
+    QuantityReimbursed_mean = mean(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_sd = sd(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_min = min(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_max = max(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_count = n(),
+    
+    TotalAmountReimbursed_mean = mean(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_sd = sd(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_min = min(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_max = max(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_count = n()
+  )
+
+# 查看结果
+print(overall_stats)
+
+
+
+#filter出来ANDA
+
+aggregated_data_ANDA_C <- aggregated_data_C %>% filter(MARKETINGCATEGORYNAME == "ANDA")
+
+model <- lm(Price ~ Year_Quarter, data = aggregated_data_ANDA_C)
+
+ggplot(aggregated_data_ANDA_C, aes(x = Year_Quarter, y = Price)) +
+  geom_point() +
+  geom_smooth(method = "lm", col = "blue") +
+  labs(title = "Regression of Price on Year_Quarter",
+       x = "Year_Quarter",
+       y = "Price")
+
+#filter出来NDA
+aggregated_data_NDA_C <- aggregated_data_C %>% filter(MARKETINGCATEGORYNAME == "NDA")
+
+model <- lm(Price ~ Year_Quarter, data = aggregated_data_NDA_C)
+
+ggplot(aggregated_data_NDA_C, aes(x = Year_Quarter, y = Price)) +
+  geom_point() +
+  geom_smooth(method = "lm", col = "red") +
+  labs(title = "Regression of Price on Year_Quarter",
+       x = "Year_Quarter",
+       y = "Price")
+
+
+
+```
+2.3
+```{r}
+#简单的数据清理结束，接下来我们要寻找一个可以和匹配但是没有在cartel里面的药:CALCITRIOL
+#ANDA
+filtered_merged_data_1 <- merged_data %>%
+  filter(SUBSTANCENAME == "CALCITRIOL")
+
+
+#计算price
+aggregated_data_1 <- filtered_merged_data_1 %>%
+  group_by(Year, Quarter, MARKETINGCATEGORYNAME) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  )
+
+aggregated_data_1 <- aggregated_data_1 %>%
+  mutate(Price = TotalAmountReimbursed / QuantityReimbursed)
+
+aggregated_data_1 <- aggregated_data_1 %>%
+  mutate(Year_Quarter = paste(Year, Quarter, sep = "-"))
+
+
+#summaeizeBudesonide的statistics
+
+
+
+aggregated_data_1 <- aggregated_data_1 %>%
+  filter(Year >= 2017)
+
+
+
+aggregated_data_1 <- aggregated_data_1 %>% ungroup()
+
+# 针对整个数据集计算统计值
+overall_stats <- aggregated_data_1 %>%
+  summarise(
+    Price_mean = mean(Price, na.rm = TRUE),
+    Price_sd = sd(Price, na.rm = TRUE),
+    Price_min = min(Price, na.rm = TRUE),
+    Price_max = max(Price, na.rm = TRUE),
+    Price_count = n(),
+    
+    QuantityReimbursed_mean = mean(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_sd = sd(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_min = min(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_max = max(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_count = n(),
+    
+    TotalAmountReimbursed_mean = mean(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_sd = sd(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_min = min(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_max = max(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_count = n()
+  )
+
+# 查看结果
+print(overall_stats)
+
+#filter出来ANDA
+
+aggregated_data_ANDA_1 <- aggregated_data_1 %>% filter(MARKETINGCATEGORYNAME == "ANDA")
+
+model <- lm(Price ~ Year_Quarter, data = aggregated_data_ANDA_1)
+
+ggplot(aggregated_data_ANDA_1, aes(x = Year_Quarter, y = Price)) +
+  geom_point() +
+  geom_smooth(method = "lm", col = "blue") +
+  labs(title = "Regression of Price on Year_Quarter",
+       x = "Year_Quarter",
+       y = "Price")
+
+
+#用DID的方法run regression
+aggregated_data_ANDA_1 <- aggregated_data_ANDA_1 %>%
+  mutate(drugname = "CALCITRIOL")
+aggregated_data_ANDA <- aggregated_data_ANDA %>%
+  mutate(drugname = "PARICALCITOL")
+DID_dataset <- rbind(aggregated_data_ANDA_1, aggregated_data_ANDA)
+
+
+install.packages("fixest")
+library(fixest)
+DID_dataset <- DID_dataset %>%
+  mutate(
+    DuringCartel = ifelse(Year_Quarter >= "2013-1" & Year_Quarter <= "2016-3", 1, 0),
+    PostCartel = ifelse(Year_Quarter > "2016-3", 1, 0),
+    Treatment = ifelse(drugname == "PARICALCITOL", 1, 0),
+    DuringCartel_Treatment = DuringCartel * Treatment,
+    PostCartel_Treatment = PostCartel * Treatment
+  )
+
+did_model <- feols(Price ~ DuringCartel + PostCartel + Treatment + DuringCartel_Treatment + PostCartel_Treatment | Year_Quarter, data = DID_dataset)
+
+summary(did_model)
+
+coefplot(did_model)
+
+
+
+ggplot(DID_dataset, aes(x = Year_Quarter, y = Price, color = as.factor(Treatment), group = as.factor(Treatment))) +
+  geom_line(size = 1) +  
+  geom_point(size = 2) + 
+  labs(title = "Price Trend Before and After Cartel",
+       x = "Year-Quarter",
+       y = "Price",
+       color = "Treatment Group") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+
+
+```
+2.4 这个药的ANDA和NDA price 对照
+```{r}
+
+# 加载必要的包
+library(dplyr)
+library(ggplot2)
+library(fixest)
+
+# 过滤药品
+filtered_merged_data_1 <- merged_data %>%
+  filter(SUBSTANCENAME == "PARICALCITOL")
+
+# 聚合数据：按季度计算价格
+aggregated_data_1 <- filtered_merged_data_1 %>%
+  group_by(Year, Quarter, MARKETINGCATEGORYNAME) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    Price = TotalAmountReimbursed / QuantityReimbursed,
+    Year_Quarter = paste(Year, Quarter, sep = "-")
+  ) %>%
+  filter(Year >= 2017)
+
+# 计算统计信息
+overall_stats <- aggregated_data_1 %>%
+  summarise(
+    Price_mean = mean(Price, na.rm = TRUE),
+    Price_sd = sd(Price, na.rm = TRUE),
+    Quantity_mean = mean(QuantityReimbursed, na.rm = TRUE),
+    Quantity_sd = sd(QuantityReimbursed, na.rm = TRUE),
+    Total_mean = mean(TotalAmountReimbursed, na.rm = TRUE),
+    Total_sd = sd(TotalAmountReimbursed, na.rm = TRUE)
+  )
+print(overall_stats)
+
+# 筛选 NDA 数据并画价格趋势图
+aggregated_data_NDA_1 <- aggregated_data_1 %>%
+  filter(MARKETINGCATEGORYNAME == "NDA")
+
+model <- lm(Price ~ Year_Quarter, data = aggregated_data_NDA_1)
+ggplot(aggregated_data_NDA_1, aes(x = Year_Quarter, y = Price)) +
+  geom_point() +
+  geom_smooth(method = "lm", col = "blue") +
+  labs(title = "Regression of Price on Year_Quarter",
+       x = "Year_Quarter", y = "Price") +
+  theme_minimal()
+
+# 准备 ANDA 数据（你得先创建 aggregated_data_ANDA_1）
+aggregated_data_ANDA_1 <- aggregated_data_1 %>%
+  filter(MARKETINGCATEGORYNAME == "ANDA")
+
+# 添加 drugname 字段
+aggregated_data_NDA_1 <- aggregated_data_NDA_1 %>%
+  mutate(drugname = "PARICALCITOL")
+aggregated_data_ANDA_1 <- aggregated_data_ANDA_1 %>%
+  mutate(drugname = "PARICALCITOL")
+
+# 合并数据用于DID
+DID_dataset <- rbind(aggregated_data_NDA_1, aggregated_data_ANDA_1)
+
+# 添加DID变量：用字符比较不稳，建议转成数值型时间点或使用lubridate解析
+DID_dataset <- DID_dataset %>%
+  mutate(
+    Treatment = ifelse(MARKETINGCATEGORYNAME == "NDA", 1, 0),
+    DuringCartel = ifelse(Year >= 2012 & Year <= 2016, 1, 0),
+    PostCartel = ifelse(Year > 2016, 1, 0),
+    DuringCartel_Treatment = DuringCartel * Treatment,
+    PostCartel_Treatment = PostCartel * Treatment
+  )
+
+# DID 回归
+did_model <- feols(Price ~ PostCartel + Treatment + PostCartel_Treatment | Year_Quarter, data = DID_dataset)
+summary(did_model)
+
+# 可视化价格趋势
+ggplot(DID_dataset, aes(x = Year_Quarter, y = Price, color = as.factor(Treatment), group = as.factor(Treatment))) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  labs(title = "Price Trend Before and After Cartel",
+       x = "Year-Quarter", y = "Price", color = "Treatment Group") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+
+
+
+3. 换一个新的药Pentoxifylline
+```{r}
+#先挑选出stanbstance name，因为这些药中都有Pentoxifylline成分。在分开ANDA和NDC去研究不同的价格变化
+
+filtered_merged_data <- merged_data %>%
+  filter(SUBSTANCENAME == "PERPHENAZINE")
+
+
+#计算price
+aggregated_data <- filtered_merged_data %>%
+  group_by(Year, Quarter, MARKETINGCATEGORYNAME) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  )
+
+aggregated_data <- aggregated_data %>%
+  mutate(Price = TotalAmountReimbursed / QuantityReimbursed)
+
+aggregated_data <- aggregated_data %>%
+  mutate(Year_Quarter = paste(Year, Quarter, sep = "-"))
+
+
+#summaeizePentoxifylline的statistics
+
+aggregated_data <- aggregated_data %>% ungroup()
+
+# 针对整个数据集计算统计值
+overall_stats <- aggregated_data %>%
+  summarise(
+    Price_mean = mean(Price, na.rm = TRUE),
+    Price_sd = sd(Price, na.rm = TRUE),
+    Price_min = min(Price, na.rm = TRUE),
+    Price_max = max(Price, na.rm = TRUE),
+    Price_count = n(),
+    
+    QuantityReimbursed_mean = mean(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_sd = sd(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_min = min(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_max = max(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_count = n(),
+    
+    TotalAmountReimbursed_mean = mean(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_sd = sd(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_min = min(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_max = max(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_count = n()
+  )
+
+# 查看结果
+print(overall_stats)
+
+
+
+#filter出来ANDA
+
+aggregated_data_ANDA <- aggregated_data %>% filter(MARKETINGCATEGORYNAME == "ANDA")
+
+model <- lm(Price ~ Year_Quarter, data = aggregated_data_ANDA)
+
+ggplot(aggregated_data_ANDA, aes(x = Year_Quarter, y = Price)) +
+  geom_point() +
+  geom_smooth(method = "lm", col = "blue") +
+  labs(title = "Regression of Price on Year_Quarter",
+       x = "Year_Quarter",
+       y = "Price")
+
+#filter出来NDA
+aggregated_data_NDA <- aggregated_data %>% filter(MARKETINGCATEGORYNAME == "NDA")
+
+model <- lm(Price ~ Year_Quarter, data = aggregated_data_NDA)
+
+ggplot(aggregated_data_NDA, aes(x = Year_Quarter, y = Price)) +
+  geom_point() +
+  geom_smooth(method = "lm", col = "red") +
+  labs(title = "Regression of Price on Year_Quarter",
+       x = "Year_Quarter",
+       y = "Price")
+
+#简单的数据清理结束，接下来我们要寻找一个可以和Budesonide匹配但是没有在cartel里面的药:Fluticasone Propionate
+#先挑选出stanbstance name，因为这些药中都有Budesonide成分。在分开ANDA和NDC去研究不同的价格变化
+
+filtered_merged_data_1 <- merged_data %>%
+  filter(SUBSTANCENAME == "FLUTICASONE PROPIONATE")
+
+
+#计算price
+aggregated_data_1 <- filtered_merged_data_1 %>%
+  group_by(Year, Quarter, MARKETINGCATEGORYNAME) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  )
+
+aggregated_data_1 <- aggregated_data_1 %>%
+  mutate(Price = TotalAmountReimbursed / QuantityReimbursed)
+
+aggregated_data_1 <- aggregated_data_1 %>%
+  mutate(Year_Quarter = paste(Year, Quarter, sep = "-"))
+
+
+#summaeizeBudesonide的statistics
+
+
+
+
+
+
+
+aggregated_data_1 <- aggregated_data_1 %>% ungroup()
+
+# 针对整个数据集计算统计值
+overall_stats <- aggregated_data_1 %>%
+  summarise(
+    Price_mean = mean(Price, na.rm = TRUE),
+    Price_sd = sd(Price, na.rm = TRUE),
+    Price_min = min(Price, na.rm = TRUE),
+    Price_max = max(Price, na.rm = TRUE),
+    Price_count = n(),
+    
+    QuantityReimbursed_mean = mean(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_sd = sd(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_min = min(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_max = max(QuantityReimbursed, na.rm = TRUE),
+    QuantityReimbursed_count = n(),
+    
+    TotalAmountReimbursed_mean = mean(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_sd = sd(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_min = min(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_max = max(TotalAmountReimbursed, na.rm = TRUE),
+    TotalAmountReimbursed_count = n()
+  )
+
+# 查看结果
+print(overall_stats)
+
+#filter出来ANDA
+
+aggregated_data_ANDA_1 <- aggregated_data_1 %>% filter(MARKETINGCATEGORYNAME == "ANDA")
+
+model <- lm(Price ~ Year_Quarter, data = aggregated_data_ANDA_1)
+
+ggplot(aggregated_data_ANDA_1, aes(x = Year_Quarter, y = Price)) +
+  geom_point() +
+  geom_smooth(method = "lm", col = "blue") +
+  labs(title = "Regression of Price on Year_Quarter",
+       x = "Year_Quarter",
+       y = "Price")
+
+
+#用DID的方法run regression
+aggregated_data_ANDA_1 <- aggregated_data_ANDA_1 %>%
+  mutate(drugname = "FLUTICASONE PROPIONATE")
+aggregated_data_ANDA <- aggregated_data_ANDA %>%
+  mutate(drugname = "Budesonide")
+DID_dataset <- rbind(aggregated_data_ANDA_1, aggregated_data_ANDA)
+
+
+install.packages("fixest")
+library(fixest)
+DID_dataset <- DID_dataset %>%
+  mutate(
+    DuringCartel = ifelse(Year_Quarter >= "2013-1" & Year_Quarter <= "2016-3", 1, 0),
+    PostCartel = ifelse(Year_Quarter > "2016-3", 1, 0),
+    Treatment = ifelse(drugname == "Budesonide", 1, 0),
+    DuringCartel_Treatment = DuringCartel * Treatment,
+    PostCartel_Treatment = PostCartel * Treatment
+  )
+
+did_model <- feols(Price ~ DuringCartel + PostCartel + Treatment + DuringCartel_Treatment + PostCartel_Treatment | Year_Quarter, data = DID_dataset)
+
+summary(did_model)
+
+coefplot(did_model)
+
+
+
+ggplot(DID_dataset, aes(x = Year_Quarter, y = Price, color = as.factor(Treatment), group = as.factor(Treatment))) +
+  geom_line(size = 1) +  
+  geom_point(size = 2) + 
+  labs(title = "Price Trend Before and After Cartel",
+       x = "Year-Quarter",
+       y = "Price",
+       color = "Treatment Group") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+
+```
+
+
+4. Event Study
+```{r}
+library(dplyr)
+library(stringr)
+library(readxl)
+
+# 读取 cartel 药物名单
+cartel_drugs <- read_excel("~/Desktop/Research Data/Drug info dataset(已自动还原).xlsx")
+
+# 把 Drug_Cartel 这一列转成大写
+cartel_list <- toupper(cartel_drugs$Drug_Cartel)
+filtered_data <- merged_data %>%
+  filter(str_detect(SUBSTANCENAME, str_c(cartel_list, collapse = "|")))
+
+
+filtered_data <- filtered_data %>%
+  filter(str_detect(MARKETINGCATEGORYNAME, "ANDA"))
+filtered_data <- filtered_data %>%
+  mutate(
+    `Total Amount Reimbursed` = as.numeric(`Total Amount Reimbursed`),
+    `Units Reimbursed` = as.numeric(`Units Reimbursed`),
+    price_per_unit = `Total Amount Reimbursed` / `Units Reimbursed`
+  ) %>%
+  filter(!is.na(price_per_unit), is.finite(price_per_unit))
+
+filtered_data <- filtered_data %>%
+  mutate(
+    quarter_numeric = as.numeric(Year) + (as.numeric(Quarter) - 1) / 4,
+    event_quarter = 2016 + (3 - 1) / 4,  # 2016Q3 = 2016.5
+    event_time = round((quarter_numeric - event_quarter) * 4)  # 用季度为单位
+    
+  )
+
+event_avg_price <- filtered_data %>%
+  group_by(event_time) %>%
+  summarise(avg_price = mean(price_per_unit, na.rm = TRUE)) %>%
+  arrange(event_time)
+
+library(ggplot2)
+
+ggplot(event_avg_price, aes(x = event_time, y = avg_price)) +
+  geom_line(color = "blue") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Average Price Around Cartel End",
+       x = "Event Time (Quarters Relative to Cartel End)",
+       y = "Average Price per Unit") +
+  theme_minimal()
+
+library(ggplot2)
+
+
+
+```
+
+```{R}
+# 设定阶段划分（你也可以自定义）
+event_avg_price <- event_avg_price %>%
+  mutate(
+    time_group = case_when(
+      event_time < -4 ~ "Pre-Cartel",
+      event_time >= -4 & event_time <= 0 ~ "During-Cartel",
+      event_time > 0 ~ "Post-Cartel"
+    )
+  )
+
+# 1. 输出各阶段的平均价格
+group_means <- event_avg_price %>%
+  group_by(time_group) %>%
+  summarise(mean_price = mean(avg_price, na.rm = TRUE))
+
+print(group_means)
+
+# 2. 用t检验比较 Pre vs Post 是否显著不同
+pre_prices <- event_avg_price$avg_price[event_avg_price$time_group == "Pre-Cartel"]
+post_prices <- event_avg_price$avg_price[event_avg_price$time_group == "Post-Cartel"]
+
+t_test_result <- t.test(pre_prices, post_prices)
+print(t_test_result)
+
+# 3. 可视化：加上三段平均线
+pre_mean <- mean(pre_prices, na.rm = TRUE)
+post_mean <- mean(post_prices, na.rm = TRUE)
+
+ggplot(event_avg_price, aes(x = event_time, y = avg_price)) +
+  geom_line(color = "blue") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = pre_mean, color = "darkgreen", linetype = "dotted") +
+  geom_hline(yintercept = post_mean, color = "darkorange", linetype = "dotted") +
+  annotate("text", x = -15, y = pre_mean + 0.2, label = "Pre-Cartel Avg", color = "darkgreen") +
+  annotate("text", x = 15, y = post_mean + 0.2, label = "Post-Cartel Avg", color = "darkorange") +
+  labs(title = "Price Stickiness After Cartel Ends",
+       x = "Event Time (Quarters Relative to Cartel End)",
+       y = "Average Price per Unit") +
+  theme_minimal()
+
+
+```
+
+5. Calculate the total loss and consumer surplus loss
+```{R}
+library(dplyr)
+library(stringr)
+library(readxl)
+
+# 读取 cartel 药物名单并统一为大写
+cartel_drugs <- read_excel("~/Desktop/Research Data/Drug info dataset(已自动还原).xlsx")
+cartel_list <- toupper(trimws(cartel_drugs$Drug_Cartel))  # 去掉多余空格
+
+# 高效匹配 cartel 药物
+filtered_data <- merged_data %>%
+  filter(str_detect(SUBSTANCENAME, str_c(cartel_list, collapse = "|"))) %>%
+  filter(str_detect(MARKETINGCATEGORYNAME, "ANDA")) %>%
+  mutate(
+    `Total Amount Reimbursed` = as.numeric(gsub("[^0-9.]", "", `Total Amount Reimbursed`)),
+    `Units Reimbursed` = as.numeric(gsub("[^0-9.]", "", `Units Reimbursed`)),
+    price_per_unit = `Total Amount Reimbursed` / `Units Reimbursed`
+  ) %>%
+  filter(!is.na(price_per_unit), is.finite(price_per_unit)) %>%
+  mutate(
+    quarter_numeric = as.numeric(Year) + (as.numeric(Quarter) - 1) / 4,
+    event_quarter = 2016 + (3 - 1) / 4,  # 2016Q3 = 2016.5
+    event_time = round((quarter_numeric - event_quarter) * 4)
+  )
+
+# ✅ 计算 baseline price：事件前 >10 个季度的平均价格
+baseline_data <- filtered_data %>% filter(event_time < -14)
+baseline_price <- mean(baseline_data$price_per_unit, na.rm = TRUE)
+
+filtered_data %>%
+  filter(event_time >= -10 & event_time < 0,
+         price_per_unit < baseline_price) %>%
+  select(`SUBSTANCENAME`, `Units Reimbursed`)
+
+filtered_data %>%
+  filter(event_time >= -10 & event_time < 0,
+         price_per_unit > baseline_price) %>%
+  select(`SUBSTANCENAME`, `Units Reimbursed`)
+
+# 防止 baseline price 是 NA
+if (is.na(baseline_price)) {
+  stop("❗️Baseline price is NA. Please check if there are enough data points before event_time = -10.")
+}
+
+# 设置价格弹性
+price_elasticity <- 0.4
+
+# ✅ 计算 welfare loss
+filtered_data <- filtered_data %>%
+  mutate(
+    overcharge = ifelse(event_time >= -10 & event_time < 0,
+                        (price_per_unit - baseline_price) * `Units Reimbursed`, 0),
+    
+    Q_hat = `Units Reimbursed` * (1 - price_elasticity * (price_per_unit - baseline_price) / baseline_price),
+    
+    cs_loss = ifelse(event_time >= -10 & event_time < 0,
+                     0.5 * (`Units Reimbursed` - Q_hat) * (price_per_unit - baseline_price), 0)
+  )
+
+# ✅ 汇总
+total_overcharge <- sum(filtered_data$overcharge, na.rm = TRUE)
+total_cs_loss <- sum(filtered_data$cs_loss, na.rm = TRUE)
+
+# 检查结果是否合理
+if (is.na(total_overcharge) | is.na(total_cs_loss)) {
+  warning("❗️ Some loss values are NA. Please double check your filtered data.")
+}
+
+# ✅ 输出结果
+cat("📌 Total Overcharge (USD):", round(total_overcharge, 2), "\n")
+cat("📌 Total Consumer Surplus Loss (USD):", round(total_cs_loss, 2), "\n")
+
+filtered_data %>%
+  filter(event_time >= -10 & event_time < 0) %>%
+  summarise(
+    pos_overcharge = sum(overcharge[overcharge > 0], na.rm = TRUE),
+    neg_overcharge = sum(overcharge[overcharge < 0], na.rm = TRUE)
+  )
+
+
+cat("Baseline price:", round(baseline_price, 2), "\n")
+
+filtered_data %>% 
+  filter(event_time >= -10 & event_time < 0) %>% 
+  summarise(cartel_avg_price = mean(price_per_unit, na.rm = TRUE)) %>%
+  mutate(overcharge_sign = cartel_avg_price - baseline_price)
+
+
+、
+
+```
+
+
+```{R}
+# 确保 filtered_data 包含以下列：price_per_unit, Units Reimbursed, event_time, LABELERNAME
+
+# 设定 baseline price 和价格弹性
+baseline_price <- mean(filtered_data$price_per_unit[filtered_data$event_time < -4], na.rm = TRUE)
+price_elasticity <- -0.4  # 可改为 -0.2 或 -0.6 做敏感性分析
+
+# 计算 overcharge 和 consumer surplus loss
+filtered_data <- filtered_data %>%
+  mutate(
+    overcharge = ifelse(event_time >= -4 & event_time <= 8,
+                        (price_per_unit - baseline_price) * `Units Reimbursed`, 0),
+    
+    Q_hat = `Units Reimbursed` * (1 - price_elasticity * (price_per_unit - baseline_price) / baseline_price),
+    
+    cs_loss = ifelse(event_time >= -4 & event_time <= 8,
+                     0.5 * (`Units Reimbursed` - Q_hat) * (price_per_unit - baseline_price), 0)
+  )
+
+# Group by 公司
+company_loss <- filtered_data %>%
+  group_by(LABELERNAME) %>%
+  summarise(
+    Total_Overcharge = sum(overcharge, na.rm = TRUE),
+    Total_CS_Loss = sum(cs_loss, na.rm = TRUE),
+    Total_Units = sum(`Units Reimbursed`, na.rm = TRUE)
+  ) %>%
+  arrange(desc(Total_CS_Loss))
+
+# 查看结果
+print(company_loss)
+
+
+
+
+
+
+
+```
+
+```{R}
+library(dplyr)
+library(ggplot2)
+
+# Step 1: 设定 cartel 公司名单（大小写统一处理）
+cartel_companies <- c(
+  "MYLAN PHARMACEUTICALS INC.",
+  "SANDOZ INC",
+  "LUPIN PHARMACEUTICALS,INC.",
+  "GREENSTONE LLC",
+  "ACTAVIS PHARMA, INC.",
+  "PAR PHARMACEUTICAL INC.",
+  "TARO PHARMACEUTICALS U.S.A., INC.",
+  "ZYDUS PHARMACEUTICALS USA INC.",
+  "GLENMARK PHARMACEUTICALS INC., USA"
+)
+
+# Step 2: 标记是否为 cartel 公司
+filtered_data <- filtered_data %>%
+  mutate(
+    LABELERNAME_UPPER = toupper(LABELERNAME),
+    is_cartel_company = ifelse(LABELERNAME_UPPER %in% cartel_companies, "Cartel", "Non-Cartel")
+  )
+
+# Step 3: 设置 baseline price 和价格弹性
+baseline_price <- mean(filtered_data$price_per_unit[filtered_data$event_time < -4], na.rm = TRUE)
+price_elasticity <- -0.4  # 可调整为 -0.2 / -0.6 做敏感性分析
+
+# Step 4: 计算 welfare loss
+filtered_data <- filtered_data %>%
+  mutate(
+    overcharge = ifelse(event_time >= -4 & event_time <= 8,
+                        (price_per_unit - baseline_price) * `Units Reimbursed`, 0),
+    
+    Q_hat = `Units Reimbursed` * (1 - price_elasticity * (price_per_unit - baseline_price) / baseline_price),
+    
+    cs_loss = ifelse(event_time >= -4 & event_time <= 8,
+                     0.5 * (`Units Reimbursed` - Q_hat) * (price_per_unit - baseline_price), 0)
+  )
+
+# Step 5: 汇总每组总损失和平均损失
+group_loss <- filtered_data %>%
+  group_by(is_cartel_company) %>%
+  summarise(
+    Total_Overcharge = sum(overcharge, na.rm = TRUE),
+    Total_CS_Loss = sum(cs_loss, na.rm = TRUE),
+    Total_Units = sum(`Units Reimbursed`, na.rm = TRUE),
+    Company_Count = n_distinct(LABELERNAME)
+  ) %>%
+  mutate(
+    Avg_Overcharge_per_Company = Total_Overcharge / Company_Count,
+    Avg_CS_Loss_per_Company = Total_CS_Loss / Company_Count
+  )
+
+# 查看结果表格
+print(group_loss)
+
+# Step 6: 画图（每家公司平均消费者损失）
+ggplot(group_loss, aes(x = is_cartel_company, y = Avg_CS_Loss_per_Company, fill = is_cartel_company)) +
+  geom_col(width = 0.6) +
+  labs(title = "Average Consumer Surplus Loss per Company",
+       x = "Company Type", y = "Avg CS Loss per Company (USD)") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+```{R}
+library(dplyr)
+library(ggplot2)
+
+# 你已经有 filtered_data 包含这些列：
+# - LABELERNAME
+# - SUBSTANCENAME
+# - Units Reimbursed
+# - price_per_unit
+# - event_time
+
+# Step 1: baseline price + price elasticity
+baseline_price <- mean(filtered_data$price_per_unit[filtered_data$event_time < -4], na.rm = TRUE)
+price_elasticity <- -0.4
+
+# Step 2: 计算 Overcharge 和 CS Loss（如果之前没做）
+filtered_data <- filtered_data %>%
+  mutate(
+    overcharge = ifelse(event_time >= -4 & event_time <= 8,
+                        (price_per_unit - baseline_price) * `Units Reimbursed`, 0),
+    
+    Q_hat = `Units Reimbursed` * (1 - price_elasticity * (price_per_unit - baseline_price) / baseline_price),
+    
+    cs_loss = ifelse(event_time >= -4 & event_time <= 8,
+                     0.5 * (`Units Reimbursed` - Q_hat) * (price_per_unit - baseline_price), 0)
+  )
+
+# Step 3: 按公司 + 药物组合聚合
+drug_company_loss <- filtered_data %>%
+  group_by(LABELERNAME, SUBSTANCENAME) %>%
+  summarise(
+    Total_Overcharge = sum(overcharge, na.rm = TRUE),
+    Total_CS_Loss = sum(cs_loss, na.rm = TRUE),
+    Total_Units = sum(`Units Reimbursed`, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# Step 4: 取 Top 10 最严重组合（按绝对损失排序）
+top10 <- drug_company_loss %>%
+  mutate(loss_abs = abs(Total_CS_Loss)) %>%
+  arrange(desc(loss_abs)) %>%
+  slice(1:10) %>%
+  mutate(Label = paste0(SUBSTANCENAME, "\n(", LABELERNAME, ")"))
+
+# Step 5: 可视化前10名重灾组合
+ggplot(top10, aes(x = reorder(Label, Total_CS_Loss), y = Total_CS_Loss)) +
+  geom_col(fill = "darkred") +
+  coord_flip() +
+  labs(title = "Top 10 Drug-Company Combinations by Consumer Surplus Loss",
+       x = "Drug & Company",
+       y = "Total Consumer Surplus Loss (USD)") +
+  theme_minimal()
+
+
+
+```
+
+
+
+
+```{R}
+library(dplyr)
+library(ggplot2)
+
+# 只筛选 Teva 且是 ANDA 的数据
+teva_anda <- merged_data %>%
+  filter(LABELERNAME == "Teva Pharmaceuticals USA, Inc.",
+         MARKETINGCATEGORYNAME == "ANDA")
+
+# 按时间聚合计算价格
+teva_aggregated <- teva_anda %>%
+  group_by(Year, Quarter) %>%
+  summarise(
+    TotalAmountReimbursed = sum(`Total Amount Reimbursed`, na.rm = TRUE),
+    QuantityReimbursed = sum(`Units Reimbursed`, na.rm = TRUE)
+  ) %>%
+  mutate(
+    Price = TotalAmountReimbursed / QuantityReimbursed,
+    Year_Quarter = paste(Year, Quarter, sep = "-")
+  ) %>%
+  ungroup()
+
+# 转换为 factor 并按时间顺序排序
+teva_aggregated$Year_Quarter <- factor(teva_aggregated$Year_Quarter,
+                                       levels = sort(unique(teva_aggregated$Year_Quarter)))
+
+# 画图
+ggplot(teva_aggregated, aes(x = Year_Quarter, y = Price)) +
+  geom_line(color = "blue", size = 1.2) +
+  geom_point(color = "blue", size = 2.5) +
+  labs(
+    title = "Teva Pharmaceuticals USA, Inc. — Price Trend (ANDA Only)",
+    x = "Year-Quarter",
+    y = "Price"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
